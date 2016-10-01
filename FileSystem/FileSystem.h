@@ -79,8 +79,8 @@ bool in(int id, int begin, int len,char buffer[]);
 */
 typedef struct
 {
-	int  dnum;                  //磁盘盘块内第几个字节
-	int  bnum;                  //磁盘盘块号
+	int  bnum;				 //磁盘盘块号
+	int  dnum;                  //磁盘盘块内第几个字节        
 }pointer;                    //已打开文件表中读、写指针的结构
 
 typedef struct{
@@ -203,7 +203,7 @@ bool checkValid(char name[]);
 char ins_judge(char args[]);
 int checkExist(char* name, int attribute);
 int getFreeBlock();
-
+int nameLen(char name[]);
 /* change n to binary string*/
 void toB(char n, char s[]);
 //TODO

@@ -80,7 +80,7 @@ bool HFS_install(){
 void save_FAT(){
 
 	out(0, HFS.fat.next);
-	out(0, HFS.fat.next + BLOCK_SIZE);
+	out(1, HFS.fat.next + BLOCK_SIZE);
 
 }
 
@@ -112,7 +112,7 @@ bool OPT_init(){
 
 bool CMD_init(){
 
-	CMD.cur_dir.data = (inode *)malloc(BLOCK_SIZE / sizeof(inode));
+	CMD.cur_dir.data = (inode *)malloc(BLOCK_SIZE);
 	in(ROOT_DIR, (char*)(CMD.cur_dir.data));
 	CMD.cur_dir.cnt = CMD.cur_dir.data[0].fileLength;
 
@@ -150,7 +150,7 @@ bool HFS_create_file(char name[], char attribute){
 	/*init vfile info*/
 	vfile* temp = (vfile*)malloc(sizeof(vfile));
 
-	if (addName(temp->fileInfo.name, CMD.cur_dir.fileInfo.name, name, FILE_TYPE))
+	if (!addName(temp->fileInfo.name, CMD.cur_dir.fileInfo.name, name, FILE_TYPE))
 		return false;
 	temp->fileInfo.attribute = attribute&NORMAL_FILE;
 	temp->fileInfo.flag = 0;
@@ -158,19 +158,20 @@ bool HFS_create_file(char name[], char attribute){
 	temp->fileInfo.number = blockid;
 	temp->data = (char*)malloc(BLOCK_SIZE);
 
-	pointer tempp = *(pointer*)malloc(sizeof(pointer));
+	/*pointer tempp = *(pointer*)malloc(sizeof(pointer));
 	tempp.bnum = blockid;
-	tempp.dnum = 0;
-	temp->fileInfo.read = tempp;
-	temp->fileInfo.write = tempp;
+	tempp.dnum = 0;*/
+	temp->fileInfo.read = { blockid, 0 };
+	temp->fileInfo.write = { blockid, 0 };
 
 
 	/*update CMD*/
-	memcpy(CMD.cur_dir.data[CMD.cur_dir.cnt].fileName, name, LEN_FILE_NAME);
+	memcpy(CMD.cur_dir.data[CMD.cur_dir.cnt].fileName, name, nameLen(name));
 	CMD.cur_dir.data[CMD.cur_dir.cnt].fileLength = BLOCK_SIZE;
 	memcpy(CMD.cur_dir.data[CMD.cur_dir.cnt].fileType, FILE_TYPE, 2);
 	CMD.cur_dir.data[CMD.cur_dir.cnt].blockId = blockid;
 	CMD.cur_dir.data[CMD.cur_dir.cnt].attribute = attribute;
+	CMD.cur_dir.data[0].fileLength++;
 	CMD.cur_dir.cnt++;
 	//clearEmptyFlag(CMD.cur_dir.fileInfo.name);
 
@@ -179,7 +180,7 @@ bool HFS_create_file(char name[], char attribute){
 	pushBuf(temp->data, BLOCK_SIZE, temp->fileInfo.write);
 	save_FAT();
 
-	free(&tempp);
+	//free(&tempp);
 	free(temp->data);
 	free(temp);
 	return true;
@@ -204,30 +205,31 @@ vfile* HFS_open_file(char name[], char opt_type){
 
 	/*if have opened?*/
 	for (int i = 0; i < MAX_OPEN; i++){
-		if (!memcmp(getFileName(HFS.OPT.file[i].fileInfo.name), name,3))
+		char* temp = getFileName(HFS.OPT.file[i].fileInfo.name);
+		if (!memcmp(temp, name,nameLen(temp)))
 			return NULL;
 	}
 
 	/*create a vfile and fill openfile table*/
-	vfile* temp = (vfile*)malloc(sizeof(vfile));
+	vfile* temp = &(HFS.OPT.file[HFS.OPT.length]);
 	if(addName(temp->fileInfo.name, CMD.cur_dir.fileInfo.name, name, FILE_TYPE)){
 		return false;
 	}
-	temp->data = (char*)malloc(temp->fileInfo.length);
+	//temp->data = (char*)malloc(temp->fileInfo.length);
 	temp->fileInfo.length = CMD.cur_dir.data[dirIndex].fileLength;
 	temp->fileInfo.number = CMD.cur_dir.data[dirIndex].blockId;
 	temp->fileInfo.attribute = CMD.cur_dir.data[dirIndex].attribute;
 	temp->fileInfo.flag = (int)(opt_type);
-
+	/*
 	pointer tempp = *(pointer*)malloc(sizeof(pointer));
 	tempp.bnum = CMD.cur_dir.data[dirIndex].blockId;
 	tempp.dnum = 0;	
-
-	temp->fileInfo.read = tempp;
-	temp->fileInfo.write = tempp;
+	*/
+	temp->fileInfo.read = { CMD.cur_dir.data[dirIndex].blockId,0 };
+	temp->fileInfo.write = { CMD.cur_dir.data[dirIndex].blockId, 0 };
 															
 	
-	HFS.OPT.file[HFS.OPT.length] = *temp;
+	HFS.OPT.length++;
 
 	return temp;
 
@@ -258,8 +260,9 @@ bool HFS_close_file(char name[]){
 
 	/*check if opened*/
 	int fileIndex = 0;
+	char* temp = getFileName(HFS.OPT.file[fileIndex].fileInfo.name);
 	for (; fileIndex < HFS.OPT.length; fileIndex++){
-		 if (!memcmp(getFileName(HFS.OPT.file[fileIndex].fileInfo.name), name,3))
+		 if (!memcmp(temp, name,nameLen(temp)))
 			break;
 	}
 
@@ -295,8 +298,9 @@ bool HFS_delete_file(char name[]){
 
 	/*if haved open?*/
 	int fileIndex = 0;
+	char* temp = getFileName(HFS.OPT.file[fileIndex].fileInfo.name);
 	for (; fileIndex < HFS.OPT.length; fileIndex++){
-		if (!memcmp(getFileName(HFS.OPT.file[fileIndex].fileInfo.name), name,3))
+		if (!memcmp(temp, name,nameLen(temp)))
 			break;
 	}
 
@@ -306,12 +310,14 @@ bool HFS_delete_file(char name[]){
 
 
 	/*delect disk*/
-	int blockId = CMD.cur_dir.data[dirIndex].blockId;
-	while (HFS.fat.next[blockId] != FILE_END){
-		blockId = HFS.fat.next[blockId];
-		HFS.fat.next[blockId] = FILE_END;
+	int father = CMD.cur_dir.data[dirIndex].blockId;
+	int blockId;
+	while (HFS.fat.next[father] != FILE_END){
+		blockId = HFS.fat.next[father];
+		HFS.fat.next[father] = FREE;
+		father = blockId;
 	}
-	HFS.fat.next[blockId] = FILE_END;
+	HFS.fat.next[father] = FREE;
 
 	/*delect dir info*/
 	for (int i = dirIndex; i < CMD.cur_dir.cnt; i++){
@@ -336,8 +342,9 @@ bool HFS_typefile(char name[]){
 
 	/*if haved open?*/
 	int fileIndex = 0;
+	char* tempName = getFileName(HFS.OPT.file[fileIndex].fileInfo.name);
 	for (; fileIndex < HFS.OPT.length; fileIndex++){
-		if (!memcmp(getFileName(HFS.OPT.file[fileIndex].fileInfo.name), name,3))
+		if (!memcmp(tempName, name,nameLen(tempName)))
 			break;
 	}
 	if (fileIndex != HFS.OPT.length)
@@ -367,8 +374,9 @@ bool HFS_change(char name[], char attribute){
 
 	/*if haved open?*/
 	int fileIndex = 0;
+	char* temp = getFileName(HFS.OPT.file[fileIndex].fileInfo.name);
 	for (; fileIndex < HFS.OPT.length; fileIndex++){
-		if (!memcmp(getFileName(HFS.OPT.file[fileIndex].fileInfo.name), name,3))
+		if (!memcmp(temp, name,nameLen(temp)))
 			break;
 	}
 	if (fileIndex != HFS.OPT.length)
@@ -385,7 +393,7 @@ for dir
 
 bool HFS_create_dir(char name[]){
 
-	/*if dir is exist*/
+	/*if dir is exist add print*/
 	if (checkExist(name, DIRECTION) != NO_EXIST)
 		return false;
 
@@ -400,16 +408,19 @@ bool HFS_create_dir(char name[]){
 		return false;
 	HFS.fat.next[blockid] = FILE_END;
 
-	/*update current direction*/
+	/*update current direction and save in disk*/
 	CMD.cur_dir.fileInfo.length ++;
-
 	memcpy(CMD.cur_dir.data[CMD.cur_dir.cnt].fileName ,name,3);
+	for (int i = strlen(name); i < 3; i++){
+		CMD.cur_dir.data[CMD.cur_dir.cnt].fileName[i] = ' ';
+	}//fill with space;
 	memcpy(CMD.cur_dir.data[CMD.cur_dir.cnt].fileType , DIR_TYPE,2);
-	CMD.cur_dir.data[CMD.cur_dir.cnt].fileLength = 0;
+	CMD.cur_dir.data[CMD.cur_dir.cnt].fileLength = 1;
 	CMD.cur_dir.data[CMD.cur_dir.cnt].blockId = blockid;
 	CMD.cur_dir.data[CMD.cur_dir.cnt].attribute = DIRECTION;
 
 	CMD.cur_dir.cnt++;
+	CMD.cur_dir.data[0].fileLength++;
 
 	pushBuf((char*)(CMD.cur_dir.data), BLOCK_SIZE, CMD.cur_dir.fileInfo.write);
 
@@ -446,18 +457,20 @@ void HFS_show_dir(){
 		else {
 			printf("DIR");	
 		}
-		printf("\t%d\t%c%c%c.%c%c\t%s\n",
+
+		printf("\t%d\t%c%c%c %c%c\t%s\n",
 			CMD.cur_dir.data[i].fileLength,
 			CMD.cur_dir.data[i].fileName[0],
 			CMD.cur_dir.data[i].fileName[1],
-			CMD.cur_dir.data[i].fileName[1],
+			CMD.cur_dir.data[i].fileName[2],
 			CMD.cur_dir.data[i].fileType[0],
 			CMD.cur_dir.data[i].fileType[1],
 			string);		
 
 	}
-	printf("\n%s>",CMD.cur_dir.fileInfo.name);
+	printf("\n");
 }
+
 bool HFS_delete_dir(char name[]){
 
 	/*if dir exist*/
@@ -475,7 +488,7 @@ bool HFS_DFS(char name[], int blockId,int length,bool flag){
 
 
 	bool b = true;
-	inode* temp = (inode*)malloc(sizeof(inode)*length);
+	inode temp [BLOCK_SIZE/sizeof(inode)];
 	pointer p = { blockId, 0 };
 	popBuf((char*)(temp), length, p);
 
@@ -483,9 +496,9 @@ bool HFS_DFS(char name[], int blockId,int length,bool flag){
 		if (temp[i].attribute == NORMAL_FILE){
 			/*have open?*/
 			int fileIndex = 0;
+			char* tempName = getFileName(HFS.OPT.file[fileIndex].fileInfo.name);
 			for (; fileIndex < HFS.OPT.length; fileIndex++){
-				if (!memcmp(getFileName(HFS.OPT.file[fileIndex].fileInfo.name), 
-										temp[i].fileName,3))
+				if (!memcmp(tempName,temp[i].fileName,nameLen(tempName)))
 					return false;
 			}
 			if (flag == 1)
@@ -519,13 +532,13 @@ bool HFS_change_dir(char name[]){
 	CMD.cur_dir.fileInfo.number = CMD.cur_dir.data[dirIndex].blockId;
 	CMD.cur_dir.fileInfo.write=CMD.cur_dir.fileInfo.read = { CMD.cur_dir.fileInfo.number, 0 };
 
-	if (!strcmp(CMD.cur_dir.fileInfo.name, ".. /")){
+	if (!strcmp(name, "..")){
 		/*move back to father*/
 		int len=strlen(CMD.cur_dir.fileInfo.name);
 		CMD.cur_dir.fileInfo.name[len - 3] = '\n';	
 	}
 	else{
-		if (addName(CMD.cur_dir.fileInfo.name, CMD.cur_dir.fileInfo.name, name, DIR_TYPE)){
+		if (!addName(CMD.cur_dir.fileInfo.name, CMD.cur_dir.fileInfo.name, name, DIR_TYPE)){
 			return false;
 		}
 	}
@@ -540,8 +553,10 @@ bool HFS_change_dir(char name[]){
 vfile* checkOpen(char name[],int opt_type){
 	/*haved opened?*/
 	int fileIndex = 0;
+	char* temp = getFileName(HFS.OPT.file[fileIndex].fileInfo.name);
 	for (; fileIndex < HFS.OPT.length; fileIndex++){
-		if (!memcmp(getFileName(HFS.OPT.file[fileIndex].fileInfo.name), name,3))
+		
+		if (!memcmp(temp, name, nameLen(temp)))
 			break;
 	}
 
@@ -557,23 +572,23 @@ vfile* checkOpen(char name[],int opt_type){
 
 int getFreeBlock(){
 	/*RR*/
-	static int blockid=BLOCK_BEGIN;
-	int end = (blockid - 1) % BLOCK_SIZE + BLOCK_BEGIN;
-	for (; blockid!=end; blockid=(blockid+1)%BLOCK_SIZE){
-		if (HFS.fat.blocks[blockid] == FREE)
+	static int id=0;
+	int end = (id - 1 + DISK_SIZE - ROOT_DIR - 1) % (DISK_SIZE - ROOT_DIR - 1) ;
+	for (; id != end; id = (id + 1) % (DISK_SIZE - ROOT_DIR - 1)){
+		if (HFS.fat.next[id+BLOCK_BEGIN+1] == FREE)
 			break;
 	}
-	if (blockid == end)
+	if (id == end)
 		return FILE_END;
 	else
-		return blockid;
+		return id + BLOCK_BEGIN + 1;
 }
 
 int checkExist(char* name,int attribute){
 	/*if this name is exist*/
 	for (int i = 0; i < CMD.cur_dir.cnt; i++){
-
-		if (!strcmp(name, CMD.cur_dir.data[i].fileName) &&
+		int temp = nameLen(CMD.cur_dir.data[i].fileName);
+		if (!memcmp(name, CMD.cur_dir.data[i].fileName, nameLen(CMD.cur_dir.data[i].fileName)) &&
 						(CMD.cur_dir.data[i].attribute&attribute))
 			return i;
 	}
@@ -698,7 +713,7 @@ void CMD_HELP(){
 void CMD_MakeFile(char name[]){
 
 	if (checkValid(name)){
-		HFS_close_file(name);
+		HFS_create_file(name,NORMAL_FILE);
 	}
 }
 
@@ -747,21 +762,21 @@ void CMD_DEL(char name[]){
 }
 
 void CMD_ERR(){
-	printf("NO SUCH INSTRUCTION!!!");
+	printf("NO SUCH INSTRUCTION!!!\n");
 }
 
 bool checkValid(char name[]){
 
-	if (strlen(name) != 3){
-		printf("Please input less than 3 char");
+	if (strlen(name) > LEN_FILE_NAME ){
+		printf("Please input less than 3 char\n");
 		return false;
 	}
-	for (int i = 0; i < 3; i++){
-		if (name[i] == '$' || name[i] == '.' || name[i] == '/' ||
+	for (int i = 0; i < strlen(name); i++){
+		if(! (name[i] == '$' || name[i] == '.' || name[i] == '/' ||
 			('0' <= name[i] && name[i] <= '9') ||
 			('a' <= name[i] && name[i] <= 'z') ||
-			('A' <= name[i] && name[i] <= 'Z')){
-			printf("Please input letter,number ,'$', '/' or '/'");
+			('A' <= name[i] && name[i] <= 'Z'))){
+			printf("Please input letter,number ,'$', '/' or '/'\n");
 			return false;
 		}
 	}
@@ -773,22 +788,21 @@ bool addName(char dst[], char dir[], char name[], char type[]){
 	int end = strlen(dir);
 	if (end + 6 >= 20)
 		return false;
-	char temp[20] = "";
-	strcpy(temp, dir);
-	memcpy(temp + end, name, 3);
-	end += 3;
+	strcpy(dst, dir);
+	memcpy(dst + end, name, nameLen(name));
+	end += nameLen(name);
 	if (!memcmp(type, FILE_TYPE, 2)){
 		/*for file*/
-		temp[end] = '.';
+		dst[end] = '.';
 		end++;
-		memcpy(temp + end, type, 2);
+		memcpy(dst + end, type, 2);
 		end += 2;
-		temp[end] = '\0';
+		dst[end] = '\0';
 	}
 	else{
 		/*for dir*/
-		temp[end] = '\\';
-		temp[end + 1] = '\0';
+		dst[end] = '/';
+		dst[end + 1] = '\0';
 	}
 	
 	return true;
@@ -835,13 +849,20 @@ char *getFileName(char name[]){
 
 void pushBuf(char* val, int len, pointer p){
 
-	out(p.dnum, p.bnum, len,val);
+	out(p.bnum, p.dnum, len,val);
 	return;
 }
 void popBuf(char* val, int len, pointer p){
 
-	in(p.dnum,p.bnum,len,val);
+	in(p.bnum,p.dnum,len,val);
 	return;
 }
-
+int nameLen(char name[]){
+	int i = 0;
+	for (; i < LEN_FILE_NAME; i++){
+		if (name[i] == ' ')
+			return i;
+	}
+	return  LEN_FILE_NAME;
+}
 
