@@ -427,11 +427,10 @@ bool HFS_create_dir(char name[]){
 	/*save new dir in disk*/
 	inode *temp=(inode*)malloc(BLOCK_SIZE );
 	temp[0] = { "", "", DIRECTION,
-		blockid,
-		1 };
+		CMD.cur_dir.data[0].blockId,
+		CMD.cur_dir.cnt};
 	memcpy(temp[0].fileName,".. ",3);
 	memcpy(temp[0].fileType, DIR_TYPE, 2);
-	memcpy(&(CMD.cur_dir.data[CMD.cur_dir.cnt] ),&temp,sizeof(inode)); 
 
 	pointer p = { blockid, 0 };
 	pushBuf((char*)temp, BLOCK_SIZE, p);
@@ -526,7 +525,6 @@ bool HFS_change_dir(char name[]){
 	if (dirIndex == NO_EXIST)
 		return false;
 
-
 	/*change current dir */
 	CMD.cur_dir.cnt=CMD.cur_dir.fileInfo.length = CMD.cur_dir.data[dirIndex].fileLength;
 	CMD.cur_dir.fileInfo.number = CMD.cur_dir.data[dirIndex].blockId;
@@ -535,7 +533,7 @@ bool HFS_change_dir(char name[]){
 	if (!strcmp(name, "..")){
 		/*move back to father*/
 		int len=strlen(CMD.cur_dir.fileInfo.name);
-		CMD.cur_dir.fileInfo.name[len - 3] = '\n';	
+		CMD.cur_dir.fileInfo.name[len - nameLen(CMD.cur_dir.data[0].fileName)] = '\0';	
 	}
 	else{
 		if (!addName(CMD.cur_dir.fileInfo.name, CMD.cur_dir.fileInfo.name, name, DIR_TYPE)){
@@ -623,7 +621,7 @@ void console(){
 				break;
 			case HELP:
 				CMD_HELP();
-				break;
+				break; 
 			case Make_File:
 				scanf("%s", args1);
 				CMD_MakeFile(args1);
@@ -789,8 +787,8 @@ bool addName(char dst[], char dir[], char name[], char type[]){
 	if (end + 6 >= 20)
 		return false;
 	strcpy(dst, dir);
-	memcpy(dst + end, name, nameLen(name));
-	end += nameLen(name);
+	memcpy(dst + end, name,strlen(name));
+	end += strlen(name);
 	if (!memcmp(type, FILE_TYPE, 2)){
 		/*for file*/
 		dst[end] = '.';
