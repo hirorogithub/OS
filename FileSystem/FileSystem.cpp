@@ -428,7 +428,7 @@ bool HFS_create_dir(char name[]){
 	inode *temp=(inode*)malloc(BLOCK_SIZE );
 	temp[0] = { "", "", DIRECTION,
 		CMD.cur_dir.data[0].blockId,
-		CMD.cur_dir.cnt};
+		(char)CMD.cur_dir.cnt};
 	memcpy(temp[0].fileName,".. ",3);
 	memcpy(temp[0].fileType, DIR_TYPE, 2);
 
@@ -597,11 +597,16 @@ void console(){
 	char args1[10]="\0";
 	char args2[BLOCK_SIZE] = "\0";
 	char args3=0;
+	bool exitFlag = false;
 	printf("Welcome to Hiro_File_System:\n");
 	
 	while (1){
 		printf("%s>", CMD.cur_dir.fileInfo.name);
-		scanf("%s", args1);
+		scanf("%s", args1); //存在两个bug，待修复 
+		/*
+			bug1：输入的字符不连续，则充当多次输入对待
+			bug2：若当前启动，曾有过输入的字符超过限定长度，则最后使用“exit”退出时系统报告出现bug
+		*/
 		switch (ins_judge(args1))
 		{
 			case	MD:
@@ -642,12 +647,17 @@ void console(){
 				scanf("%s", args1);
 				CMD_DEL(args1);
 				break;
+			case	EXIT:
+				exitFlag = true;
+				break;
 			case	ERR:
 				CMD_ERR();
 		default:
 			break;
 		}
+		if (exitFlag) break;
 	}
+
 }
 
 void CMD_MD(char name[]){
@@ -689,6 +699,7 @@ void CMD_HELP(){
 #define	Change				7
 #define	Write_File				8
 #define	DEL						9
+#define EXIT					10
 #define	ERR						-1*/
 	printf("Welcome to use Hiro_File_System\n");
 	printf("Instructions are as follow:\n\n");
@@ -702,6 +713,7 @@ void CMD_HELP(){
 	printf("cg [name]\t\tchange a file to new type by [name][type]\n");
 	printf("wf [name] [buf]\t\twrite to file by[name] and [buf]\n");
 	printf("del [name]\t\tdelete a file by[name]\n");
+	printf("exit\t\t\texit the cmd\n");
 	printf("for some instruction you should input  parameter to make them done,for example:\n");
 	printf("cd doc \n");
 	printf("this instruction try to change current direction to 'doc'\n");
@@ -760,7 +772,7 @@ void CMD_DEL(char name[]){
 }
 
 void CMD_ERR(){
-	printf("NO SUCH INSTRUCTION!!!\n");
+	printf("NO SUCH INSTRUCTION!!!\t(try \"help\")\n");
 }
 
 bool checkValid(char name[]){
@@ -826,6 +838,8 @@ char ins_judge(char args[]){
 		return Write_File;
 	if (!strcmp(args, "del"))
 		return DEL;
+	if (!strcmp(args, "exit"))
+		return EXIT;
 	return ERR;
 }
 

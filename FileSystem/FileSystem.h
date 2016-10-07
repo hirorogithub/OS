@@ -6,7 +6,7 @@
 #define	BLOCK_SIZE		64
 #define	DISK_SIZE		128
 #define	BLOCK_BEGIN		2
-#define	FILE_END				-1
+#define	FILE_END				255 // -1
 #define	DESTORY			254
 #define	FREE					0
 
@@ -44,6 +44,7 @@
 #define	Change				7
 #define	Write_File				8
 #define	DEL						9
+#define EXIT					10
 #define	ERR						-1
 
 
