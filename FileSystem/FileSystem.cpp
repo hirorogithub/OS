@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <ctype.h>
 /* TODO
 void toB(char n, char s[]);
 //TODO
@@ -610,7 +611,7 @@ void console(){
 		switch (ins_judge(args1))
 		{
 			case	MD:
-				scanf("%s", args1);
+				scanf("%s", args1); //命名不可使用空格
 				CMD_MD(args1);
 				break;
 			case DIR:
@@ -660,6 +661,12 @@ void console(){
 
 }
 
+/*
+建立目录（md）
+建立目录首先要找到建立目录的位置（父目录），然后查找该目录是否存在，如果父目
+录不存在，不能建立；如果存在，查找是否存在同名目录，存在，不能建立；不存在，则查
+找一个空目录项，为该目录申请一个盘块，并填写目录内容。
+*/
 void CMD_MD(char name[]){
 
 	if (checkValid(name)){
@@ -776,17 +783,15 @@ void CMD_ERR(){
 }
 
 bool checkValid(char name[]){
-
-	if (strlen(name) > LEN_FILE_NAME ){
-		printf("Please input less than 3 char\n");
+	int nameLen = strlen(name);
+	if (nameLen > LEN_FILE_NAME ){
+		printf("Please input no more than 3 char\n");
 		return false;
 	}
-	for (int i = 0; i < strlen(name); i++){
-		if(! (name[i] == '$' || name[i] == '.' || name[i] == '/' ||
-			('0' <= name[i] && name[i] <= '9') ||
-			('a' <= name[i] && name[i] <= 'z') ||
-			('A' <= name[i] && name[i] <= 'Z'))){
-			printf("Please input letter,number ,'$', '/' or '/'\n");
+	//使用字母、数字和除“$”、“.”、“/”以外的字符
+	for (int i = 0; i < nameLen; i++){
+		if( (name[i] == '$' || name[i] == '.' || name[i] == '/') || (!isascii(name[i])) ){
+			printf("Please input letter,number,or characters except '$', '.' Or '/'\n");
 			return false;
 		}
 	}
