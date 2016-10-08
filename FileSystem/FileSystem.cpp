@@ -571,22 +571,22 @@ vfile* checkOpen(char name[],int opt_type){
 
 int getFreeBlock(){
 	/*RR*/
-	static int id=0;
-	int end = (id - 1 + DISK_SIZE - ROOT_DIR - 1) % (DISK_SIZE - ROOT_DIR - 1) ;
-	for (; id != end; id = (id + 1) % (DISK_SIZE - ROOT_DIR - 1)){
-		if (HFS.fat.next[id+BLOCK_BEGIN+1] == FREE)
+	static int id = ROOT_DIR + 1;
+	int end = DISK_SIZE;
+	for (; id != end; ++id){
+		if (HFS.fat.next[id] == FREE)
 			break;
 	}
 	if (id == end)
 		return FILE_END;
 	else
-		return id + BLOCK_BEGIN + 1;
+		return id;
 }
 
 int checkExist(char* name,int attribute){
 	/*if this name is exist*/
 	for (int i = 0; i < CMD.cur_dir.cnt; i++){
-		int temp = nameLen(CMD.cur_dir.data[i].fileName);
+		//int temp = nameLen(CMD.cur_dir.data[i].fileName);
 		if (!memcmp(name, CMD.cur_dir.data[i].fileName, nameLen(CMD.cur_dir.data[i].fileName)) &&
 						(CMD.cur_dir.data[i].attribute&attribute))
 			return i;
