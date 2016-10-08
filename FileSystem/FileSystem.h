@@ -44,6 +44,7 @@
 #define	Change				7
 #define	Write_File				8
 #define	DEL						9
+#define EXIT					10
 #define	ERR						-1
 
 

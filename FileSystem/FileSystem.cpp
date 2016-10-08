@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <ctype.h>
 /* TODO
 void toB(char n, char s[]);
 //TODO
@@ -428,7 +429,7 @@ bool HFS_create_dir(char name[]){
 	inode *temp=(inode*)malloc(BLOCK_SIZE );
 	temp[0] = { "", "", DIRECTION,
 		CMD.cur_dir.data[0].blockId,
-		CMD.cur_dir.cnt};
+		(char)CMD.cur_dir.cnt};
 	memcpy(temp[0].fileName,".. ",3);
 	memcpy(temp[0].fileType, DIR_TYPE, 2);
 
@@ -439,6 +440,8 @@ bool HFS_create_dir(char name[]){
 	save_FAT();
 	return true;
 }
+
+//有时间，增加显示当前目录（"."）
 void HFS_show_dir(){
 
 
@@ -517,9 +520,8 @@ bool HFS_DFS(char name[], int blockId,int length,bool flag){
 
 }
 
-
-bool HFS_change_dir(char name[]){
-
+bool HFS_change_dir(char name[]){ 
+	if (!strcmp(name, ".")) return true;
 	/*if dir exist*/
 	int dirIndex = checkExist(name, DIRECTION);
 	if (dirIndex == NO_EXIST)
@@ -570,22 +572,22 @@ vfile* checkOpen(char name[],int opt_type){
 
 int getFreeBlock(){
 	/*RR*/
-	static int id=0;
-	int end = (id - 1 + DISK_SIZE - ROOT_DIR - 1) % (DISK_SIZE - ROOT_DIR - 1) ;
-	for (; id != end; id = (id + 1) % (DISK_SIZE - ROOT_DIR - 1)){
-		if (HFS.fat.next[id+BLOCK_BEGIN+1] == FREE)
+	static int id = ROOT_DIR + 1;
+	int end = DISK_SIZE;
+	for (; id != end; ++id){
+		if (HFS.fat.next[id] == FREE)
 			break;
 	}
 	if (id == end)
 		return FILE_END;
 	else
-		return id + BLOCK_BEGIN + 1;
+		return id;
 }
 
 int checkExist(char* name,int attribute){
 	/*if this name is exist*/
 	for (int i = 0; i < CMD.cur_dir.cnt; i++){
-		int temp = nameLen(CMD.cur_dir.data[i].fileName);
+		//int temp = nameLen(CMD.cur_dir.data[i].fileName);
 		if (!memcmp(name, CMD.cur_dir.data[i].fileName, nameLen(CMD.cur_dir.data[i].fileName)) &&
 						(CMD.cur_dir.data[i].attribute&attribute))
 			return i;
@@ -597,15 +599,20 @@ void console(){
 	char args1[10]="\0";
 	char args2[BLOCK_SIZE] = "\0";
 	char args3=0;
+	bool exitFlag = false;
 	printf("Welcome to Hiro_File_System:\n");
 	
 	while (1){
-		printf("%s>", CMD.cur_dir.fileInfo.name);
-		scanf("%s", args1);
+		printf("%s>", CMD.cur_dir.fileInfo.name); //进入子目录再回退到父目录时，这里的名字有问题，待修复
+		scanf("%s", args1); //存在两个bug，待修复 
+		/*
+			bug1：输入的字符不连续，则充当多次输入对待
+			bug2：若当前启动，曾有过输入的字符超过限定长度，则最后使用“exit”退出时系统报告出现bug
+		*/
 		switch (ins_judge(args1))
 		{
 			case	MD:
-				scanf("%s", args1);
+				scanf("%s", args1); //命名不可使用空格
 				CMD_MD(args1);
 				break;
 			case DIR:
@@ -642,14 +649,25 @@ void console(){
 				scanf("%s", args1);
 				CMD_DEL(args1);
 				break;
+			case	EXIT:
+				exitFlag = true;
+				break;
 			case	ERR:
 				CMD_ERR();
 		default:
 			break;
 		}
+		if (exitFlag) break;
 	}
+
 }
 
+/*
+建立目录（md）
+建立目录首先要找到建立目录的位置（父目录），然后查找该目录是否存在，如果父目
+录不存在，不能建立；如果存在，查找是否存在同名目录，存在，不能建立；不存在，则查
+找一个空目录项，为该目录申请一个盘块，并填写目录内容。
+*/
 void CMD_MD(char name[]){
 
 	if (checkValid(name)){
@@ -657,13 +675,24 @@ void CMD_MD(char name[]){
 	}
 }
 
+/*
+显示目录内容（dir）
+显示目录内容首先要找到该目录，如果目录不存在，指令执行失败；如果存在，一项一
+项显示目录内容。
+*/
 void CMD_DIR(){
 
 	HFS_show_dir();
 
 }
 
-void CMD_RD(char name[]){
+/*
+删除空目录（rd）
+删除空目录首先要找到该目录，如果目录不存在，指令执行失败；如果存在，但是根目
+录或非空目录，显示不能删除，操作失败；若是非空子目录，则删除其目录项并回收对应空
+间。
+*/
+void CMD_RD(char name[]){ //存在bug，待修改
 
 	if (checkValid(name)){
 		HFS_delete_dir(name);
@@ -671,9 +700,12 @@ void CMD_RD(char name[]){
 
 }
 
+/*
+改变当前目录
+*/
 void CMD_CD(char name[]){
 
-	if (checkValid(name)){
+	if (!strcmp(name, "..") || !strcmp(name, ".") || checkValid(name)){
 		HFS_change_dir(name);
 	}
 }
@@ -689,6 +721,7 @@ void CMD_HELP(){
 #define	Change				7
 #define	Write_File				8
 #define	DEL						9
+#define EXIT					10
 #define	ERR						-1*/
 	printf("Welcome to use Hiro_File_System\n");
 	printf("Instructions are as follow:\n\n");
@@ -702,6 +735,7 @@ void CMD_HELP(){
 	printf("cg [name]\t\tchange a file to new type by [name][type]\n");
 	printf("wf [name] [buf]\t\twrite to file by[name] and [buf]\n");
 	printf("del [name]\t\tdelete a file by[name]\n");
+	printf("exit\t\t\texit the cmd\n");
 	printf("for some instruction you should input  parameter to make them done,for example:\n");
 	printf("cd doc \n");
 	printf("this instruction try to change current direction to 'doc'\n");
@@ -760,21 +794,19 @@ void CMD_DEL(char name[]){
 }
 
 void CMD_ERR(){
-	printf("NO SUCH INSTRUCTION!!!\n");
+	printf("NO SUCH INSTRUCTION!!!\t(try \"help\")\n");
 }
 
 bool checkValid(char name[]){
-
-	if (strlen(name) > LEN_FILE_NAME ){
-		printf("Please input less than 3 char\n");
+	int nameLen = strlen(name);
+	if (nameLen > LEN_FILE_NAME ){
+		printf("Please input no more than 3 char\n");
 		return false;
 	}
-	for (int i = 0; i < strlen(name); i++){
-		if(! (name[i] == '$' || name[i] == '.' || name[i] == '/' ||
-			('0' <= name[i] && name[i] <= '9') ||
-			('a' <= name[i] && name[i] <= 'z') ||
-			('A' <= name[i] && name[i] <= 'Z'))){
-			printf("Please input letter,number ,'$', '/' or '/'\n");
+	//使用字母、数字和除“$”、“.”、“/”以外的字符
+	for (int i = 0; i < nameLen; i++){
+		if( (name[i] == '$' || name[i] == '.' || name[i] == '/') || (!isascii(name[i])) ){
+			printf("Please input letter,number,or characters except '$', '.' Or '/'\n");
 			return false;
 		}
 	}
@@ -826,6 +858,8 @@ char ins_judge(char args[]){
 		return Write_File;
 	if (!strcmp(args, "del"))
 		return DEL;
+	if (!strcmp(args, "exit"))
+		return EXIT;
 	return ERR;
 }
 
