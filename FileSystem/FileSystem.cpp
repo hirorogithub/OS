@@ -440,6 +440,8 @@ bool HFS_create_dir(char name[]){
 	save_FAT();
 	return true;
 }
+
+//有时间，增加显示当前目录（"."）
 void HFS_show_dir(){
 
 
@@ -518,9 +520,8 @@ bool HFS_DFS(char name[], int blockId,int length,bool flag){
 
 }
 
-
-bool HFS_change_dir(char name[]){
-
+bool HFS_change_dir(char name[]){ 
+	if (!strcmp(name, ".")) return true;
 	/*if dir exist*/
 	int dirIndex = checkExist(name, DIRECTION);
 	if (dirIndex == NO_EXIST)
@@ -602,7 +603,7 @@ void console(){
 	printf("Welcome to Hiro_File_System:\n");
 	
 	while (1){
-		printf("%s>", CMD.cur_dir.fileInfo.name);
+		printf("%s>", CMD.cur_dir.fileInfo.name); //进入子目录再回退到父目录时，这里的名字有问题，待修复
 		scanf("%s", args1); //存在两个bug，待修复 
 		/*
 			bug1：输入的字符不连续，则充当多次输入对待
@@ -674,13 +675,24 @@ void CMD_MD(char name[]){
 	}
 }
 
+/*
+显示目录内容（dir）
+显示目录内容首先要找到该目录，如果目录不存在，指令执行失败；如果存在，一项一
+项显示目录内容。
+*/
 void CMD_DIR(){
 
 	HFS_show_dir();
 
 }
 
-void CMD_RD(char name[]){
+/*
+删除空目录（rd）
+删除空目录首先要找到该目录，如果目录不存在，指令执行失败；如果存在，但是根目
+录或非空目录，显示不能删除，操作失败；若是非空子目录，则删除其目录项并回收对应空
+间。
+*/
+void CMD_RD(char name[]){ //存在bug，待修改
 
 	if (checkValid(name)){
 		HFS_delete_dir(name);
@@ -688,9 +700,12 @@ void CMD_RD(char name[]){
 
 }
 
+/*
+改变当前目录
+*/
 void CMD_CD(char name[]){
 
-	if (checkValid(name)){
+	if (!strcmp(name, "..") || !strcmp(name, ".") || checkValid(name)){
 		HFS_change_dir(name);
 	}
 }
