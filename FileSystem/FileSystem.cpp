@@ -139,12 +139,13 @@ bool HFS_create_file(char name[], char attribute){
 		return false;
 
 	/*if this name is exist*/
-	if (checkExist(name, DIRECTION) != NO_EXIST)
+	if (checkExist(name, attribute) != NO_EXIST)
 		return false;
 
 	/*check disk is full or not*/
 	int blockid = getFreeBlock();
-
+	if (blockid == NO_EXIST)
+		return false;
 
 	HFS.fat.next[blockid] = FILE_END;
 
@@ -709,7 +710,8 @@ void CMD_CD(char name[]){
 }
 
 void CMD_HELP(){
-	/*#define	MD						0
+/*
+#define	MD						0
 #define	DIR						1
 #define	RD						2
 #define	CD						3
@@ -720,7 +722,8 @@ void CMD_HELP(){
 #define	Write_File				8
 #define	DEL						9
 #define EXIT					10
-#define	ERR						-1*/
+#define	ERR						-1
+*/
 	printf("Welcome to use Hiro_File_System\n");
 	printf("Instructions are as follow:\n\n");
 	printf("md [name]\t\tmake a new direction by[name]\n");
@@ -740,6 +743,10 @@ void CMD_HELP(){
 
 }
 
+/*
+建立文件的主要工作就是检查文件目录，确认无重名文件后，寻找空闲登记项进行登记；
+寻找空闲存储块（至少一块）以备存储文件信息或存放索引表，最后应该填写已打开文件表。
+*/
 void CMD_MakeFile(char name[]){
 
 	if (checkValid(name)){
@@ -848,11 +855,13 @@ char ins_judge(char args[]){
 		return CD;
 	if (!strcmp(args, "help"))
 		return HELP;
-	if (!strcmp(args, "makefile"))
+	if (!strcmp(args, "mf"))
 		return Make_File;
-	if (!strcmp(args, "read"))
+	if (!strcmp(args, "rf"))
 		return Read_File;
-	if (!strcmp(args, "write"))
+	if (!strcmp(args, "cg"))
+		return Change;
+	if (!strcmp(args, "wf"))
 		return Write_File;
 	if (!strcmp(args, "del"))
 		return DEL;
