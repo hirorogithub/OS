@@ -573,17 +573,13 @@ vfile* checkOpen(char name[],int opt_type){
 int getFreeBlock(){
 	/*RR*/
 	static int id = 0;
-	int old_id = id;
 	int temp_len = (DISK_SIZE - ROOT_DIR - 1);
 	for (int i = 0; i < temp_len; id = (id + 1) % (DISK_SIZE - ROOT_DIR - 1), i++) {
 		if (HFS.fat.next[id + BLOCK_BEGIN + 1] == FREE)
-				break;
+			return id + BLOCK_BEGIN + 1;
 	}
 
-	if (id == old_id)
-		return FILE_END;
-	else
-		return id + BLOCK_BEGIN + 1;
+	return FILE_END;
 }
 
 int checkExist(char* name,int attribute){
