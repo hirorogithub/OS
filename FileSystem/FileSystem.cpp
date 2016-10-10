@@ -595,20 +595,22 @@ int checkExist(char* name,int attribute){
 }
 
 void console(){
+	//该定义导致后续连锁错误出现
+	char args0[10] = "\0";
 	char args1[10]="\0";
 	char args2[BLOCK_SIZE] = "\0";
 	char args3=0;
 	bool exitFlag = false;
 	printf("Welcome to Hiro_File_System:\n");
-	
-	while (1){
+	while (true){
 		printf("%s>", CMD.cur_dir.fileInfo.name); //进入子目录再回退到父目录时，这里的名字有问题，待修复
-		scanf("%s", args1); //存在两个bug，待修复 
+		scanf("%s", args0); //存在两个bug，待修复 
 		/*
 			bug1：输入的字符不连续，则充当多次输入对待
-			bug2：若当前启动，曾有过输入的字符超过限定长度，则最后使用“exit”退出时系统报告出现bug
+			bug2：若当前启动，曾有过输入的字符超过限定长度，则最后使用“exit”退出时系统报告出现bug.
+				出现错误的原因在于输入的字符超过定义的长度，栈溢出。 同样的情况也出现在args3上，类型转换中输入导致错误。
 		*/
-		switch (ins_judge(args1))
+		switch (ins_judge(args0))
 		{
 			case	MD:
 				scanf("%s", args1); //命名不可使用空格
@@ -633,11 +635,11 @@ void console(){
 				CMD_MakeFile(args1);
 				break;
 			case	Read_File:
-				scanf("%s %d", args1,args3);
-				CMD_ReadFile(args1, args3);
+				scanf("%s %d", args1,&args3);
+				CMD_ReadFile(args1, args3); //该函数有问题，存在的文件，提示不存在。
 				break;
 			case	Change:
-				scanf("%s %d", args1,args3);
+				scanf("%s %d", args1,&args3);
 				CMD_Change(args1, args3);
 				break;
 			case	Write_File	:
@@ -761,8 +763,13 @@ void CMD_Change(char name[], char attribute){
 	}
 }
 
+/*
+读文件操作的主要工作是查找已打开文件表中是否存在该文件；如果不存在，则打开后再读；
+然后检查是否是以读方式打开文件，如果是以写方式打开文件，则不允许读；
+最后从已打开文件表中读出读指针，从这个位置上读出所需要长度，若所需长度没有读完已
+经遇到文件结束符，就终止操作。实验中用“#”表示文件结束。
+*/
 void CMD_ReadFile(char name[],int length){
-
 	if (checkValid(name)){
 		if (length > BLOCK_SIZE){
 			printf("parameter:length is too large,please input less then%d", BLOCK_SIZE);
@@ -770,7 +777,7 @@ void CMD_ReadFile(char name[],int length){
 		}
 		vfile *file;
 		if (!(file=HFS_read_file(name, length)))
-			printf("Error: file :%s does not exist",name);
+			printf("Error: file :%s does not exist\n",name);
 		else{
 			printf("%s", file->data);
 		}
