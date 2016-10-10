@@ -640,7 +640,7 @@ void console(){
 				break;
 			case	Change:
 				scanf("%s %d", args1,&args3);
-				CMD_Change(args1, args3);
+				CMD_Change(args1, args3); //该函数有问题，修改文件属性时，会把文件变为目录
 				break;
 			case	Write_File	:
 				scanf("%s %s", args1, args2);
@@ -756,6 +756,10 @@ void CMD_MakeFile(char name[]){
 	}
 }
 
+/*
+改变文件属性，首先查找该文件，如果不存在，结束；如果存在，检查文件是否打开，
+打开不能改变属性；没有打开，根据要求改变目录项中属性值。
+*/
 void CMD_Change(char name[], char attribute){
 
 	if (checkValid(name)){
