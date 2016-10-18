@@ -139,12 +139,13 @@ bool HFS_create_file(char name[], char attribute){
 		return false;
 
 	/*if this name is exist*/
-	if (checkExist(name, DIRECTION) != NO_EXIST)
+	if (checkExist(name, attribute) != NO_EXIST)
 		return false;
 
 	/*check disk is full or not*/
 	int blockid = getFreeBlock();
-
+	if (blockid == NO_EXIST)
+		return false;
 
 	HFS.fat.next[blockid] = FILE_END;
 
@@ -572,16 +573,14 @@ vfile* checkOpen(char name[],int opt_type){
 
 int getFreeBlock(){
 	/*RR*/
-	static int id = ROOT_DIR + 1;
-	int end = DISK_SIZE;
-	for (; id != end; ++id){
-		if (HFS.fat.next[id] == FREE)
-			break;
+	static int id = 0;
+	int temp_len = (DISK_SIZE - ROOT_DIR - 1);
+	for (int i = 0; i < temp_len; id = (id + 1) % (DISK_SIZE - ROOT_DIR - 1), i++) {
+		if (HFS.fat.next[id + BLOCK_BEGIN + 1] == FREE)
+			return id + BLOCK_BEGIN + 1;
 	}
-	if (id == end)
-		return FILE_END;
-	else
-		return id;
+
+	return FILE_END;
 }
 
 int checkExist(char* name,int attribute){
@@ -596,20 +595,22 @@ int checkExist(char* name,int attribute){
 }
 
 void console(){
+	//该定义导致后续连锁错误出现
+	char args0[10] = "\0";
 	char args1[10]="\0";
 	char args2[BLOCK_SIZE] = "\0";
 	char args3=0;
 	bool exitFlag = false;
 	printf("Welcome to Hiro_File_System:\n");
-	
-	while (1){
+	while (true){
 		printf("%s>", CMD.cur_dir.fileInfo.name); //进入子目录再回退到父目录时，这里的名字有问题，待修复
-		scanf("%s", args1); //存在两个bug，待修复 
+		scanf("%s", args0); //存在两个bug，待修复 
 		/*
 			bug1：输入的字符不连续，则充当多次输入对待
-			bug2：若当前启动，曾有过输入的字符超过限定长度，则最后使用“exit”退出时系统报告出现bug
+			bug2：若当前启动，曾有过输入的字符超过限定长度，则最后使用“exit”退出时系统报告出现bug.
+				出现错误的原因在于输入的字符超过定义的长度，栈溢出。 同样的情况也出现在args3上，类型转换中输入导致错误。
 		*/
-		switch (ins_judge(args1))
+		switch (ins_judge(args0))
 		{
 			case	MD:
 				scanf("%s", args1); //命名不可使用空格
@@ -634,12 +635,12 @@ void console(){
 				CMD_MakeFile(args1);
 				break;
 			case	Read_File:
-				scanf("%s %d", args1,args3);
-				CMD_ReadFile(args1, args3);
+				scanf("%s %d", args1,&args3);
+				CMD_ReadFile(args1, args3); //该函数有问题，存在的文件，提示不存在。
 				break;
 			case	Change:
-				scanf("%s %d", args1,args3);
-				CMD_Change(args1, args3);
+				scanf("%s %d", args1,&args3);
+				CMD_Change(args1, args3); //该函数有问题，修改文件属性时，会把文件变为目录
 				break;
 			case	Write_File	:
 				scanf("%s %s", args1, args2);
@@ -711,7 +712,8 @@ void CMD_CD(char name[]){
 }
 
 void CMD_HELP(){
-	/*#define	MD						0
+/*
+#define	MD						0
 #define	DIR						1
 #define	RD						2
 #define	CD						3
@@ -722,7 +724,8 @@ void CMD_HELP(){
 #define	Write_File				8
 #define	DEL						9
 #define EXIT					10
-#define	ERR						-1*/
+#define	ERR						-1
+*/
 	printf("Welcome to use Hiro_File_System\n");
 	printf("Instructions are as follow:\n\n");
 	printf("md [name]\t\tmake a new direction by[name]\n");
@@ -742,6 +745,10 @@ void CMD_HELP(){
 
 }
 
+/*
+建立文件的主要工作就是检查文件目录，确认无重名文件后，寻找空闲登记项进行登记；
+寻找空闲存储块（至少一块）以备存储文件信息或存放索引表，最后应该填写已打开文件表。
+*/
 void CMD_MakeFile(char name[]){
 
 	if (checkValid(name)){
@@ -749,6 +756,10 @@ void CMD_MakeFile(char name[]){
 	}
 }
 
+/*
+改变文件属性，首先查找该文件，如果不存在，结束；如果存在，检查文件是否打开，
+打开不能改变属性；没有打开，根据要求改变目录项中属性值。
+*/
 void CMD_Change(char name[], char attribute){
 
 	if (checkValid(name)){
@@ -756,8 +767,13 @@ void CMD_Change(char name[], char attribute){
 	}
 }
 
+/*
+读文件操作的主要工作是查找已打开文件表中是否存在该文件；如果不存在，则打开后再读；
+然后检查是否是以读方式打开文件，如果是以写方式打开文件，则不允许读；
+最后从已打开文件表中读出读指针，从这个位置上读出所需要长度，若所需长度没有读完已
+经遇到文件结束符，就终止操作。实验中用“#”表示文件结束。
+*/
 void CMD_ReadFile(char name[],int length){
-
 	if (checkValid(name)){
 		if (length > BLOCK_SIZE){
 			printf("parameter:length is too large,please input less then%d", BLOCK_SIZE);
@@ -765,7 +781,7 @@ void CMD_ReadFile(char name[],int length){
 		}
 		vfile *file;
 		if (!(file=HFS_read_file(name, length)))
-			printf("Error: file :%s does not exist",name);
+			printf("Error: file :%s does not exist\n",name);
 		else{
 			printf("%s", file->data);
 		}
@@ -850,11 +866,13 @@ char ins_judge(char args[]){
 		return CD;
 	if (!strcmp(args, "help"))
 		return HELP;
-	if (!strcmp(args, "makefile"))
+	if (!strcmp(args, "mf"))
 		return Make_File;
-	if (!strcmp(args, "read"))
+	if (!strcmp(args, "rf"))
 		return Read_File;
-	if (!strcmp(args, "write"))
+	if (!strcmp(args, "cg"))
+		return Change;
+	if (!strcmp(args, "wf"))
 		return Write_File;
 	if (!strcmp(args, "del"))
 		return DEL;
