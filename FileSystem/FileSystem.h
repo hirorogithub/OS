@@ -172,6 +172,11 @@ void HFS_show_dir();
 bool HFS_delete_dir(char name[]);
 bool HFS_DFS(char name[], int blockId,int length,bool flag);// flag :0 for check ,1for delete
 bool HFS_change_dir(char name[]);
+
+/*默认值给dir用，双参数给file用*/
+void increaseFileLength(int cur_blockid,int len=1);
+void decreaseFileLength(int cur_blockid,int len=-1);
+void _changeFileLength(int cur_blockid,int delta);
 //void clearEmptyFlag(char name[]);
 
 /*HFS API*/
