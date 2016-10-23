@@ -14,8 +14,9 @@
 #define	LEN_FILE_TYPE		2
 #define	LEN_FILE_LENGTH	1
 
-#define	WRITE					1
-#define	READ					0
+/*flag*/
+#define	WRITE					0
+#define	READ					1
 #define	NO_EXIST				-1
 
 /*type*/

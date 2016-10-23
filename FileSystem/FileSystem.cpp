@@ -115,6 +115,10 @@ bool FAT_init(){
 bool OPT_init(){
 	
 	HFS.OPT.length = 0;
+	for (int i = 0; i < MAX_OPEN; ++i){
+		HFS.OPT.file[i].data = (char*)malloc(sizeof(BLOCK_SIZE));
+		//memset(HFS.OPT.file[i].data, 0, BLOCK_SIZE);
+	}
 	return true;
 }
 
@@ -181,7 +185,7 @@ bool HFS_create_file(char name[], char attribute){
 		for (int i = strlen(name); i < 3; i++){
 		CMD.cur_dir.data[CMD.cur_dir.cnt].fileName[i] = ' ';
 	}//fill with space;
-	CMD.cur_dir.data[CMD.cur_dir.cnt].fileLength = BLOCK_SIZE;
+	CMD.cur_dir.data[CMD.cur_dir.cnt].fileLength = 0;
 	memcpy(CMD.cur_dir.data[CMD.cur_dir.cnt].fileType, FILE_TYPE, 2);
 	CMD.cur_dir.data[CMD.cur_dir.cnt].blockId = blockid;
 	CMD.cur_dir.data[CMD.cur_dir.cnt].attribute = attribute;
@@ -206,7 +210,7 @@ bool HFS_create_file(char name[], char attribute){
 vfile* HFS_open_file(char name[], char opt_type){
 
 	/* if READ_ONLY or not*/
-	if (opt_type&READ_ONLY)
+	if (opt_type&READ)
 		return NULL;
 
 	/*if this name exsit ?*/
@@ -228,7 +232,7 @@ vfile* HFS_open_file(char name[], char opt_type){
 
 	/*create a vfile and fill openfile table*/
 	vfile* temp = &(HFS.OPT.file[HFS.OPT.length]);
-	if(addName(temp->fileInfo.name, CMD.cur_dir.fileInfo.name, name, FILE_TYPE)){
+	if(!addName(temp->fileInfo.name, CMD.cur_dir.fileInfo.name, name, FILE_TYPE)){
 		return false;
 	}
 	//temp->data = (char*)malloc(temp->fileInfo.length);
@@ -243,7 +247,8 @@ vfile* HFS_open_file(char name[], char opt_type){
 	*/
 	temp->fileInfo.read = { CMD.cur_dir.data[dirIndex].blockId,0 };
 	temp->fileInfo.write = { CMD.cur_dir.data[dirIndex].blockId, 0 };
-															
+										
+	popBuf(temp->data, temp->fileInfo.length, temp->fileInfo.read)
 	
 	HFS.OPT.length++;
 
@@ -269,10 +274,10 @@ vfile*  HFS_write_file(char name[], char buf[], int length){
 	vfile * file=checkOpen(name, WRITE);
 	if (!file)
 		return NULL;
-	memcpy(file->data, buf, length);
+	memcpy(file->data + file->fileInfo.length, buf, length + 1);
 	file->fileInfo.length += length;
 	//increaseFileLength(CMD.cur_dir.fileInfo.number,length);
-	CMD.cur_dir.fileInfo.length++;
+	//CMD.cur_dir.fileInfo.length++;
 	return file;
 }
 
@@ -405,7 +410,7 @@ bool HFS_change(char name[], char attribute){
 	if (fileIndex != HFS.OPT.length)
 		return false;
 
-	CMD.cur_dir.data[dirIndex].attribute = attribute;
+	CMD.cur_dir.data[dirIndex].attribute &= attribute;
 
 	return true;
 }
@@ -596,9 +601,9 @@ bool HFS_change_dir(char name[]){
 vfile* checkOpen(char name[],int opt_type){
 	/*haved opened?*/
 	int fileIndex = 0;
-	char* temp = getFileName(HFS.OPT.file[fileIndex].fileInfo.name);
+	char* temp ;
 	for (; fileIndex < HFS.OPT.length; fileIndex++){
-		
+		temp = getFileName(HFS.OPT.file[fileIndex].fileInfo.name);
 		if (!memcmp(temp, name, nameLen(temp)))
 			break;
 	}
@@ -807,10 +812,14 @@ void CMD_MakeFile(char name[]){
 /*
 改变文件属性，首先查找该文件，如果不存在，结束；如果存在，检查文件是否打开，
 打开不能改变属性；没有打开，根据要求改变目录项中属性值。
+添加条件控制，只允许添加只读和系统文件属性。
 */
 void CMD_Change(char name[], char attribute){
-
-	if (checkValid(name)){
+	if ((attribute&DIRECTION) || (attribute&NORMAL_FILE)){
+		printf("Please input read_only or systerm_file");
+		return;
+	}
+	if (checkValid(name)){	
 		HFS_change(name, attribute);
 	}
 }
@@ -841,11 +850,11 @@ void CMD_WriteFile(char name[], char buf[]){
 	if (checkValid(name)){
 		vfile* file = HFS_write_file(name, buf, strlen(buf));
 		if (!file){
-			printf("Error:file %s does not exist", name);
+			printf("Error:file %s does not exist\n", name);
 			return;
 		}
 		else{
-			printf("%s", file->data);
+			printf("%s\n", file->data);
 		}
 	}
 }
