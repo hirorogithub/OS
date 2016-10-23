@@ -176,7 +176,11 @@ bool HFS_create_file(char name[], char attribute){
 
 
 	/*update CMD*/
-	memcpy(CMD.cur_dir.data[CMD.cur_dir.cnt].fileName, name, nameLen(name));
+	/*update current direction */
+	memcpy(CMD.cur_dir.data[CMD.cur_dir.cnt].fileName, name, LEN_FILE_NAME);
+		for (int i = strlen(name); i < 3; i++){
+		CMD.cur_dir.data[CMD.cur_dir.cnt].fileName[i] = ' ';
+	}//fill with space;
 	CMD.cur_dir.data[CMD.cur_dir.cnt].fileLength = BLOCK_SIZE;
 	memcpy(CMD.cur_dir.data[CMD.cur_dir.cnt].fileType, FILE_TYPE, 2);
 	CMD.cur_dir.data[CMD.cur_dir.cnt].blockId = blockid;
@@ -428,7 +432,7 @@ bool HFS_create_dir(char name[]){
 	HFS.fat.next[blockid] = FILE_END;
 
 	/*update current direction */
-	memcpy(CMD.cur_dir.data[CMD.cur_dir.cnt].fileName ,name,3);
+	memcpy(CMD.cur_dir.data[CMD.cur_dir.cnt].fileName ,name,LEN_FILE_NAME);
 	for (int i = strlen(name); i < 3; i++){
 		CMD.cur_dir.data[CMD.cur_dir.cnt].fileName[i] = ' ';
 	}//fill with space;
@@ -633,17 +637,19 @@ int checkExist(char* name,int attribute){
 }
 
 void console(){
+	/*添加安全读入机制，限定读入长度*/
+#define inputName(x)		scanf_s("%3s",args1,4);fflush(stdin)
 	//该定义导致后续连锁错误出现
 	char args0[10] = "\0";
 	char args1[10]="\0";
-	char args2[BLOCK_SIZE] = "\0";
+	char args2[BLOCK_SIZE+1] = "\0";
 	char args3=0;
 	bool exitFlag = false;
 	printf("Welcome to Hiro_File_System:\n");
 	while (true){
 		printf("%s>", CMD.cur_dir.fileInfo.name); //进入子目录再回退到父目录时，这里的名字有问题，待修复
 		/*2016年10月18日 22:27:39：↑已修复*/
-		scanf("%s", args0); //存在两个bug，待修复 
+		scanf_s("%4s", args0,5); //存在两个bug，待修复 
 		/*
 			bug1：输入的字符不连续，则充当多次输入对待
 			bug2：若当前启动，曾有过输入的字符超过限定长度，则最后使用“exit”退出时系统报告出现bug.
@@ -652,41 +658,44 @@ void console(){
 		switch (ins_judge(args0))
 		{
 			case	MD:
-				scanf("%s", args1); //命名不可使用空格
+				inputName(args1); //命名不可使用空格
 				CMD_MD(args1);
 				break;
 			case DIR:
 				CMD_DIR();
 				break;
 			case RD:
-				scanf("%s", args1);
+				inputName(args1);
 				CMD_RD(args1);
 				break;
 			case CD:
-				scanf("%s", args1);
+				inputName(args1);
 				CMD_CD(args1);
 				break;
 			case HELP:
 				CMD_HELP();
 				break; 
 			case Make_File:
-				scanf("%s", args1);
+				inputName(args1);
 				CMD_MakeFile(args1);
 				break;
 			case	Read_File:
-				scanf("%s %d", args1,&args3);
+				inputName(args1);
+				scanf("%d",&args3);
 				CMD_ReadFile(args1, args3); //该函数有问题，存在的文件，提示不存在。
 				break;
 			case	Change:
-				scanf("%s %d", args1,&args3);
+				inputName(args1);
+				scanf("%d", &args3);
 				CMD_Change(args1, args3); //该函数有问题，修改文件属性时，会把文件变为目录
 				break;
 			case	Write_File	:
-				scanf("%s %s", args1, args2);
+				inputName(args1);
+				scanf("%64s",args2,65);
 				CMD_WriteFile(args1, args2);
 				break;
 			case	DEL:
-				scanf("%s", args1);
+				inputName(args1);
 				CMD_DEL(args1);
 				break;
 			case	EXIT:

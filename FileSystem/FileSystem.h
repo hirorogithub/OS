@@ -12,7 +12,7 @@
 
 #define	LEN_FILE_NAME	3
 #define	LEN_FILE_TYPE		2
-#define	LEN_FILE_length	1
+#define	LEN_FILE_LENGTH	1
 
 #define	WRITE					1
 #define	READ					0
