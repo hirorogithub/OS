@@ -174,10 +174,13 @@ bool HFS_DFS(char name[], int blockId,int length,bool flag);// flag :0 for check
 bool HFS_change_dir(char name[]);
 
 /*默认值给dir用，双参数给file用*/
-void increaseFileLength(int cur_blockid,int len=1);
-void decreaseFileLength(int cur_blockid,int len=-1);
-void _changeFileLength(int cur_blockid,int delta);
+//void increaseFileLength(int cur_blockid,int len=1);
+//void decreaseFileLength(int cur_blockid,int len=-1);
+void saveFileLength(int cur_blockid);
 //void clearEmptyFlag(char name[]);
+
+void saveCur_dir();
+int getFatherFileLength();
 
 /*HFS API*/
 void pushBuf(char* val, int len,pointer p);
@@ -205,6 +208,7 @@ void CMD_WriteFile(char name[], char buf[]);
 void CMD_DEL(char name[]);
 void CMD_HELP();
 void CMD_ERR();
+
 bool checkValid(char name[]);
 char ins_judge(char args[]);
 int checkExist(char* name, int attribute);
@@ -212,6 +216,7 @@ int getFreeBlock();
 int nameLen(char name[]);
 /* change n to binary string*/
 void toB(char n, char s[]);
+void saveInput(char* s, int len);
 //TODO
 
 #endif
