@@ -215,6 +215,7 @@ char ins_judge(char args[]);
 int checkExist(char* name, int attribute);
 int getFreeBlock();
 int nameLen(char name[]);
+void nameEndSpace(char name[]);
 /* change n to binary string*/
 void toB(char n, char s[]);
 void saveInput(char* s, int len);

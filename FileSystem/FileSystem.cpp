@@ -171,6 +171,7 @@ bool HFS_create_file(char name[], char attribute){
 	temp->fileInfo.length = BLOCK_SIZE;
 	temp->fileInfo.number = blockid;
 	temp->data = (char*)malloc(BLOCK_SIZE);
+	memset(temp->data, 0, BLOCK_SIZE);
 
 	/*pointer tempp = *(pointer*)malloc(sizeof(pointer));
 	tempp.bnum = blockid;
@@ -182,9 +183,6 @@ bool HFS_create_file(char name[], char attribute){
 	/*update CMD*/
 	/*update current direction */
 	memcpy(CMD.cur_dir.data[CMD.cur_dir.cnt].fileName, name, LEN_FILE_NAME);
-		for (int i = strlen(name); i < 3; i++){
-		CMD.cur_dir.data[CMD.cur_dir.cnt].fileName[i] = ' ';
-	}//fill with space;
 	CMD.cur_dir.data[CMD.cur_dir.cnt].fileLength = 0;
 	memcpy(CMD.cur_dir.data[CMD.cur_dir.cnt].fileType, FILE_TYPE, 2);
 	CMD.cur_dir.data[CMD.cur_dir.cnt].blockId = blockid;
@@ -210,8 +208,8 @@ bool HFS_create_file(char name[], char attribute){
 vfile* HFS_open_file(char name[], char opt_type){
 
 	/* if READ_ONLY or not*/
-	if (opt_type&READ)
-		return NULL;
+	//if (opt_type&READ)
+	//	return NULL;
 
 	/*if this name exsit ?*/
 	int dirIndex = checkExist(name, NORMAL_FILE);
@@ -226,7 +224,7 @@ vfile* HFS_open_file(char name[], char opt_type){
 	/*if have opened?*/
 	for (int i = 0; i < MAX_OPEN; i++){
 		char* temp = getFileName(HFS.OPT.file[i].fileInfo.name);
-		if (!memcmp(temp, name,nameLen(temp)))
+		if (!memcmp(temp, name,nameLen(name)))
 			return NULL;
 	}
 
@@ -248,7 +246,7 @@ vfile* HFS_open_file(char name[], char opt_type){
 	temp->fileInfo.read = { CMD.cur_dir.data[dirIndex].blockId,0 };
 	temp->fileInfo.write = { CMD.cur_dir.data[dirIndex].blockId, 0 };
 										
-	popBuf(temp->data, temp->fileInfo.length, temp->fileInfo.read)
+	popBuf(temp->data, BLOCK_SIZE, temp->fileInfo.read);
 	
 	HFS.OPT.length++;
 
@@ -276,6 +274,10 @@ vfile*  HFS_write_file(char name[], char buf[], int length){
 		return NULL;
 	memcpy(file->data + file->fileInfo.length, buf, length + 1);
 	file->fileInfo.length += length;
+	int dirIndex = checkExist(name, NORMAL_FILE);
+	CMD.cur_dir.data[dirIndex].fileLength += length;
+
+	pushBuf(file->data, file->fileInfo.length, file->fileInfo.write);
 	//increaseFileLength(CMD.cur_dir.fileInfo.number,length);
 	//CMD.cur_dir.fileInfo.length++;
 	return file;
@@ -287,7 +289,7 @@ bool HFS_close_file(char name[]){
 	int fileIndex = 0;
 	char* temp = getFileName(HFS.OPT.file[fileIndex].fileInfo.name);
 	for (; fileIndex < HFS.OPT.length; fileIndex++){
-		 if (!memcmp(temp, name,nameLen(temp)))
+		 if (!memcmp(temp, name,nameLen(name)))
 			break;
 	}
 
@@ -324,16 +326,15 @@ bool HFS_delete_file(char name[]){
 
 	/*if haved open?*/
 	int fileIndex = 0;
-	char* temp = getFileName(HFS.OPT.file[fileIndex].fileInfo.name);
+	char* temp;
 	for (; fileIndex < HFS.OPT.length; fileIndex++){
-		if (!memcmp(temp, name,nameLen(temp)))
+	    temp = getFileName(HFS.OPT.file[fileIndex].fileInfo.name);
+		if (!memcmp(temp, name,nameLen(name)))
 			break;
 	}
 
-
 	if (fileIndex == HFS.OPT.length)
 		return true;
-
 
 	/*delect disk*/
 	int father = CMD.cur_dir.data[dirIndex].blockId;
@@ -371,7 +372,7 @@ bool HFS_typefile(char name[]){
 	int fileIndex = 0;
 	char* tempName = getFileName(HFS.OPT.file[fileIndex].fileInfo.name);
 	for (; fileIndex < HFS.OPT.length; fileIndex++){
-		if (!memcmp(tempName, name,nameLen(tempName)))
+		if (!memcmp(tempName, name,nameLen(name)))
 			break;
 	}
 	if (fileIndex != HFS.OPT.length)
@@ -404,7 +405,7 @@ bool HFS_change(char name[], char attribute){
 	int fileIndex = 0;
 	char* temp = getFileName(HFS.OPT.file[fileIndex].fileInfo.name);
 	for (; fileIndex < HFS.OPT.length; fileIndex++){
-		if (!memcmp(temp, name,nameLen(temp)))
+		if (!memcmp(temp, name,nameLen(name)))
 			break;
 	}
 	if (fileIndex != HFS.OPT.length)
@@ -438,9 +439,6 @@ bool HFS_create_dir(char name[]){
 
 	/*update current direction */
 	memcpy(CMD.cur_dir.data[CMD.cur_dir.cnt].fileName ,name,LEN_FILE_NAME);
-	for (int i = strlen(name); i < 3; i++){
-		CMD.cur_dir.data[CMD.cur_dir.cnt].fileName[i] = ' ';
-	}//fill with space;
 	memcpy(CMD.cur_dir.data[CMD.cur_dir.cnt].fileType , DIR_TYPE,2);
 	CMD.cur_dir.data[CMD.cur_dir.cnt].fileLength = 1;
 	CMD.cur_dir.data[CMD.cur_dir.cnt].blockId = blockid;
@@ -540,14 +538,14 @@ bool HFS_DFS(char name[], int blockId,int length,bool flag){
 			int fileIndex = 0;
 			char* tempName = getFileName(HFS.OPT.file[fileIndex].fileInfo.name);
 			for (; fileIndex < HFS.OPT.length; fileIndex++){
-				if (!memcmp(tempName,temp[i].fileName,nameLen(tempName)))
+				if (!memcmp(tempName, temp[i].fileName, nameLen(temp[i].fileName)))
 					return false;
 			}
 			if (flag == 1)
 				HFS.fat.next[temp[i].blockId] = FREE;
 		}
 		else if (temp[i].attribute == DIRECTION&&
-						strcmp(temp[i].fileName, ".. /")){
+						memcmp(temp[i].fileName, ".. /",LEN_FILE_NAME)){
 			b &= HFS_DFS(temp[i].fileName, temp[i].blockId, temp[i].fileLength,flag);
 			if (flag == 1)
 				HFS.fat.next[temp[i].blockId]=FREE;
@@ -566,7 +564,7 @@ bool HFS_change_dir(char name[]){
 	/*2.5 from grandfather get father message*/
 	/*3.switch*/
 	
-	if (!strcmp(name, ".")) return true;
+	if (!memcmp(name, ".  ",LEN_FILE_NAME)) return true;
 	/*if dir exist*/
 	int dirIndex = checkExist(name, DIRECTION);
 	if (dirIndex == NO_EXIST)
@@ -578,7 +576,7 @@ bool HFS_change_dir(char name[]){
 	//CMD.cur_dir.cnt=CMD.cur_dir.fileInfo.length = CMD.cur_dir.data[dirIndex].fileLength;
 
 
-	if (!strcmp(name, "..")){
+	if (!memcmp(name, ".. ", LEN_FILE_NAME)){
 		/*move back to father*/
 		int fileLength = getFatherFileLength();
 		CMD.cur_dir.cnt = CMD.cur_dir.fileInfo.length = fileLength;
@@ -599,12 +597,14 @@ bool HFS_change_dir(char name[]){
 }
 
 vfile* checkOpen(char name[],int opt_type){
+
+
 	/*haved opened?*/
 	int fileIndex = 0;
 	char* temp ;
 	for (; fileIndex < HFS.OPT.length; fileIndex++){
 		temp = getFileName(HFS.OPT.file[fileIndex].fileInfo.name);
-		if (!memcmp(temp, name, nameLen(temp)))
+		if (!memcmp(temp, name, nameLen(name)))
 			break;
 	}
 
@@ -686,8 +686,8 @@ void console(){
 				break;
 			case	Read_File:
 				inputName(args1);
-				scanf("%d",&args3);
-				CMD_ReadFile(args1, args3); //该函数有问题，存在的文件，提示不存在。
+				//scanf("%d",&args3);
+				CMD_ReadFile(args1, BLOCK_SIZE); //该函数有问题，存在的文件，提示不存在。
 				break;
 			case	Change:
 				inputName(args1);
@@ -725,6 +725,7 @@ void console(){
 void CMD_MD(char name[]){
 
 	if (checkValid(name)){
+		nameEndSpace(name);
 		HFS_create_dir(name);
 	}
 }
@@ -749,6 +750,7 @@ void CMD_DIR(){
 void CMD_RD(char name[]){ //存在bug，待修改
 
 	if (checkValid(name)){
+		nameEndSpace(name);
 		HFS_delete_dir(name);
 	}
 
@@ -760,6 +762,7 @@ void CMD_RD(char name[]){ //存在bug，待修改
 void CMD_CD(char name[]){
 
 	if (!strcmp(name, "..") || !strcmp(name, ".") || checkValid(name)){
+		nameEndSpace(name);
 		HFS_change_dir(name);
 	}
 }
@@ -805,6 +808,7 @@ void CMD_HELP(){
 void CMD_MakeFile(char name[]){
 
 	if (checkValid(name)){
+		nameEndSpace(name);
 		HFS_create_file(name,NORMAL_FILE);
 	}
 }
@@ -820,6 +824,7 @@ void CMD_Change(char name[], char attribute){
 		return;
 	}
 	if (checkValid(name)){	
+		nameEndSpace(name);
 		HFS_change(name, attribute);
 	}
 }
@@ -832,15 +837,23 @@ void CMD_Change(char name[], char attribute){
 */
 void CMD_ReadFile(char name[],int length){
 	if (checkValid(name)){
-		if (length > BLOCK_SIZE){
-			printf("parameter:length is too large,please input less then%d", BLOCK_SIZE);
+		nameEndSpace(name);
+		if (length > BLOCK_SIZE||(length<0)){
+			printf("parameter:length is too large or less than 0,please input less then%d", BLOCK_SIZE);
 			return;
 		}
 		vfile *file;
-		if (!(file=HFS_read_file(name, length)))
-			printf("Error: file :%s does not exist\n",name);
+		if (!(file = HFS_read_file(name, length))){
+			printf("Error: file :");
+			for (int i = 0; i < nameLen(name); ++i)
+				printf("%c", name[i]);
+			printf(" does not exist\n");
+		}
 		else{
-			printf("%s", file->data);
+			for (int i = 0; i < nameLen(name); ++i)
+				printf("%c", name[i]);
+			printf(":\n");
+			printf("%s\n", file->data);
 		}
 	}
 }
@@ -848,12 +861,19 @@ void CMD_ReadFile(char name[],int length){
 void CMD_WriteFile(char name[], char buf[]){
 
 	if (checkValid(name)){
+		nameEndSpace(name);
 		vfile* file = HFS_write_file(name, buf, strlen(buf));
 		if (!file){
-			printf("Error:file %s does not exist\n", name);
+			printf("Error:file ");
+			for (int i = 0; i < nameLen(name); i++)
+				printf("%c", name[i]); 
+			printf("does not exist\n");
 			return;
 		}
 		else{
+			for (int i = 0; i < nameLen(name); i++)
+				printf("%c", name[i]);
+			printf(".fl:\n");
 			printf("%s\n", file->data);
 		}
 	}
@@ -862,6 +882,7 @@ void CMD_WriteFile(char name[], char buf[]){
 void CMD_DEL(char name[]){
 
 	if (checkValid(name)){
+		nameEndSpace(name);
 		HFS_delete_file(name);
 	}
 }
@@ -892,8 +913,8 @@ bool addName(char dst[], char dir[], char name[], char type[]){
 	if (end + 6 >= 20)
 		return false;
 	strcpy(dst, dir);
-	memcpy(dst + end, name,strlen(name));
-	end += strlen(name);
+	memcpy(dst + end, name,nameLen(name));
+	end += nameLen(name);
 	if (!memcmp(type, FILE_TYPE, 2)){
 		/*for file*/
 		dst[end] = '.';
@@ -950,8 +971,10 @@ void toB(char n, char s[]){
 }
 
 char *getFileName(char name[]){
-	int len = strlen(name);
-	return name + len - 6;
+	int i = strlen(name) - 1;
+	while (name[i] != '/')
+		--i;
+	return name+i+1;
 }
 
 void pushBuf(char* val, int len, pointer p){
@@ -1032,4 +1055,9 @@ int getFatherFileLength(){
 	/*should never go here*/
 	return 0;
 
+}
+void nameEndSpace(char name[]){
+	for (int i = strlen(name); i < LEN_FILE_NAME; ++i){
+		name[i] = ' ';
+	}
 }
