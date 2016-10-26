@@ -347,9 +347,9 @@ bool HFS_delete_file(char name[]){
 	HFS.fat.next[father] = FREE;
 
 	/*delect dir info*/
-	for (int i = dirIndex; i < CMD.cur_dir.cnt; i++){
+	for (int i = dirIndex; i < BLOCK_SIZE/sizeof(inode)-1; i++)
 		CMD.cur_dir.data[i] = CMD.cur_dir.data[i + 1];
-	}
+	
 	CMD.cur_dir.cnt--;
 	CMD.cur_dir.fileInfo.length--;
 	CMD.cur_dir.data[0].fileLength--;
@@ -411,7 +411,7 @@ bool HFS_change(char name[], char attribute){
 	if (fileIndex != HFS.OPT.length)
 		return false;
 
-	CMD.cur_dir.data[dirIndex].attribute &= attribute;
+	CMD.cur_dir.data[dirIndex].attribute |= attribute;
 
 	return true;
 }
@@ -478,7 +478,7 @@ void HFS_show_dir(){
 		/*example:
 		FILE    LENGTH  NAM.TY  00000101*/
 		toB(CMD.cur_dir.data[i].attribute, string);
-		if (CMD.cur_dir.data[i].attribute == NORMAL_FILE){
+		if (CMD.cur_dir.data[i].attribute & NORMAL_FILE){
 			printf("FILE");
 			printf("\t%d\t%c%c%c.%c%c\t%s\n",
 			    CMD.cur_dir.data[i].fileLength ,
@@ -514,26 +514,39 @@ bool HFS_delete_dir(char name[]){
 		return false;
 
 	if (HFS_DFS(name, CMD.cur_dir.data[dirIndex].blockId, CMD.cur_dir.data[dirIndex].fileLength,false)){
-		return HFS_DFS(name, CMD.cur_dir.data[dirIndex].blockId, CMD.cur_dir.data[dirIndex].fileLength,true);
+		HFS.fat.next[CMD.cur_dir.data[dirIndex].blockId] = FREE;
+	    HFS_DFS(name, CMD.cur_dir.data[dirIndex].blockId, CMD.cur_dir.data[dirIndex].fileLength,true);
 	}
-	return true;
+	
+
+	/*delect dir info*/
+	for (int i = dirIndex; i < BLOCK_SIZE/sizeof(inode)-1; ++i)
+		CMD.cur_dir.data[i] = CMD.cur_dir.data[i + 1];
 
 	CMD.cur_dir.cnt--;
 	CMD.cur_dir.fileInfo.length--;
 	CMD.cur_dir.data[0].fileLength--;
 	//decreaseFileLength(CMD.cur_dir.fileInfo.number);
-
+	return true;
 }
+
+/*
+对于HFS_delect_dir()传入的flag：
+true:删除遍历到的文件
+false：不删除
+该DFS只遍历该根节点的所有子节点，不包括自己
+所以需要上层额外删除自身
+*/
 
 bool HFS_DFS(char name[], int blockId,int length,bool flag){
 
 	bool b = true;
 	inode temp [BLOCK_SIZE/sizeof(inode)];
 	pointer p = { blockId, 0 };
-	popBuf((char*)(temp), length, p);
+	popBuf((char*)(temp), BLOCK_SIZE, p);
 
 	for (int i = 0; i < length; i++){
-		if (temp[i].attribute == NORMAL_FILE){
+		if (temp[i].attribute & NORMAL_FILE){
 			/*have open?*/
 			int fileIndex = 0;
 			char* tempName = getFileName(HFS.OPT.file[fileIndex].fileInfo.name);
@@ -541,13 +554,13 @@ bool HFS_DFS(char name[], int blockId,int length,bool flag){
 				if (!memcmp(tempName, temp[i].fileName, nameLen(temp[i].fileName)))
 					return false;
 			}
-			if (flag == 1)
+			if (flag == true)
 				HFS.fat.next[temp[i].blockId] = FREE;
 		}
-		else if (temp[i].attribute == DIRECTION&&
-						memcmp(temp[i].fileName, ".. /",LEN_FILE_NAME)){
+		else if ((temp[i].attribute & DIRECTION)&&
+						memcmp(temp[i].fileName, ".. ",LEN_FILE_NAME)){
 			b &= HFS_DFS(temp[i].fileName, temp[i].blockId, temp[i].fileLength,flag);
-			if (flag == 1)
+			if (flag == true)
 				HFS.fat.next[temp[i].blockId]=FREE;
 		}
 	}
@@ -652,7 +665,7 @@ void console(){
 	bool exitFlag = false;
 	printf("Welcome to Hiro_File_System:\n");
 	while (true){
-		printf("%s>", CMD.cur_dir.fileInfo.name); //进入子目录再回退到父目录时，这里的名字有问题，待修复
+		printf("%s>", CMD.cur_dir.fileInfo.name); //进入子目录再回退到父目录时，这里的名字有问题，待修复【已修正】
 		/*2016年10月18日 22:27:39：↑已修复*/
 		scanf_s("%4s", args0,5); //存在两个bug，待修复 
 		/*
@@ -663,7 +676,7 @@ void console(){
 		switch (ins_judge(args0))
 		{
 			case	MD:
-				inputName(args1); //命名不可使用空格
+				inputName(args1); //命名不可使用空格【已修正】
 				CMD_MD(args1);
 				break;
 			case DIR:
@@ -687,12 +700,12 @@ void console(){
 			case	Read_File:
 				inputName(args1);
 				//scanf("%d",&args3);
-				CMD_ReadFile(args1, BLOCK_SIZE); //该函数有问题，存在的文件，提示不存在。
+				CMD_ReadFile(args1, BLOCK_SIZE); //该函数有问题，存在的文件，提示不存在。【已修正】
 				break;
 			case	Change:
 				inputName(args1);
-				scanf("%d", &args3);
-				CMD_Change(args1, args3); //该函数有问题，修改文件属性时，会把文件变为目录
+				scanf_s("%s", &args2,16);
+				CMD_Change(args1, args2); //该函数有问题，修改文件属性时，会把文件变为目录【已修正】
 				break;
 			case	Write_File	:
 				inputName(args1);
@@ -818,14 +831,15 @@ void CMD_MakeFile(char name[]){
 打开不能改变属性；没有打开，根据要求改变目录项中属性值。
 添加条件控制，只允许添加只读和系统文件属性。
 */
-void CMD_Change(char name[], char attribute){
-	if ((attribute&DIRECTION) || (attribute&NORMAL_FILE)){
-		printf("Please input read_only or systerm_file");
+void CMD_Change(char name[], char attribute[]){
+	if (strcmp(attribute,"read_only") &&strcmp(attribute,"systerm_file")){
+		printf("Please input read_only or systerm_file\n");
 		return;
 	}
 	if (checkValid(name)){	
 		nameEndSpace(name);
-		HFS_change(name, attribute);
+		char temp_attribute = strcmp(attribute, "read_only") ? SYS_FILE : READ_ONLY;
+		HFS_change(name, temp_attribute);
 	}
 }
 
@@ -1035,6 +1049,7 @@ void saveCur_dir(){
 	pushBuf((char*)CMD.cur_dir.data, BLOCK_SIZE, CMD.cur_dir.fileInfo.write);
 
 }
+
 int getFatherFileLength(){
 
 	inode father[BLOCK_SIZE / sizeof(inode)];
@@ -1056,6 +1071,7 @@ int getFatherFileLength(){
 	return 0;
 
 }
+
 void nameEndSpace(char name[]){
 	for (int i = strlen(name); i < LEN_FILE_NAME; ++i){
 		name[i] = ' ';

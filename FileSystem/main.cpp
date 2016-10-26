@@ -1,6 +1,6 @@
 #include "FileSystem.h"
-#include <stdio.h>
-#include <string.h>
+
+
 int main(){
 	
 	HFS_install();
@@ -10,3 +10,4 @@ int main(){
 
 
 }
+

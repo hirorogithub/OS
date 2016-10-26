@@ -203,7 +203,7 @@ void CMD_RD(char name[]);
 void CMD_CD(char name[]);
 void CMD_HELP();
 void CMD_MakeFile(char name[]);
-void CMD_Change(char name[],char attribute);
+void CMD_Change(char name[], char attribute[]);
 void CMD_ReadFile(char name[], int length);
 void CMD_WriteFile(char name[], char buf[]);
 void CMD_DEL(char name[]);
