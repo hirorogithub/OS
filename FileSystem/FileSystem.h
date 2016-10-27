@@ -68,6 +68,7 @@ typedef struct  {
 
 
 /*hardware	API*/
+void saveDisk();
 bool hardDisk_init();
 bool out(int id, char buffer[]);
 bool out(int id, int begin ,int len,char buffer[]);
