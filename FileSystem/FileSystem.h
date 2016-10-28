@@ -45,7 +45,8 @@
 #define	Change				7
 #define	Write_File				8
 #define	DEL						9
-#define EXIT					10
+#define	EXIT						10
+#define	SHOW_FAT			11
 #define	ERR						-1
 
 
@@ -153,7 +154,8 @@ bool HFS_install();
 bool HFS_init();
 bool FAT_init();
 bool OPT_init();
-void save_FAT();
+void save_Fat();
+void showFat();
 bool HFS_create_file(char name[], char attribute);
 vfile* HFS_open_file(char name[], char type);
 vfile*  HFS_read_file(char name[], int length);
@@ -209,6 +211,7 @@ void CMD_ReadFile(char name[], int length);
 void CMD_WriteFile(char name[], char buf[]);
 void CMD_DEL(char name[]);
 void CMD_HELP();
+void CMD_showFat();
 void CMD_ERR();
 
 bool checkValid(char name[]);

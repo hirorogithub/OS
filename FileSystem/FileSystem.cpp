@@ -81,6 +81,22 @@ void saveDisk(){
 
 }
 
+void showFat(){
+
+	printf("0:FREE\t1:OCCUPY\n");
+	printf("  ");
+	for (int i = 0; i < 16; ++i)
+		printf("%x ", i);
+	printf("\n");
+	for (int i = 0; i < DISK_SIZE / 16; ++i){
+		printf("%x ", i);
+		for (int j = 0; j < 16; ++j){
+			printf("%d ", HFS.fat.next[i * 16 + j] == FREE ? 0 : 1);
+		}
+		printf("\n");
+	}
+}
+
 bool HFS_install(){
 	 
 	/*init fat in hardisk*/
@@ -105,7 +121,7 @@ bool HFS_install(){
 	return true;
 }
 
-void save_FAT(){
+void save_Fat(){
 
 	out(0, HFS.fat.next);
 	out(1, HFS.fat.next + BLOCK_SIZE);
@@ -223,7 +239,7 @@ bool HFS_create_file(char name[], char attribute){
 	/*no more save CMD.cur_dir.data[] in disk*/
 	//pushBuf((char*)(CMD.cur_dir.data), BLOCK_SIZE, CMD.cur_dir.fileInfo.write);
 	pushBuf(data, BLOCK_SIZE, write);
-	save_FAT();
+	save_Fat();
 
 	//free(&tempp);
 	saveDisk();
@@ -596,7 +612,7 @@ bool HFS_DFS(char name[], int blockId,int length,bool flag){
 
 	/*save fat in disk*/
 	if (flag=true)
-		save_FAT();
+		save_Fat();
 	return b;
 
 }
@@ -749,6 +765,9 @@ void console(){
 			case	EXIT:
 				exitFlag = true;
 				break;
+			case SHOW_FAT:
+				CMD_showFat();
+				break;
 			case	ERR:
 				CMD_ERR();
 		default:
@@ -822,7 +841,8 @@ void CMD_HELP(){
 #define	Change				7
 #define	Write_File				8
 #define	DEL						9
-#define EXIT					10
+#define	EXIT						10
+#define	SHOW_FAT			11
 #define	ERR						-1
 */
 	printf("Welcome to use Hiro_File_System\n");
@@ -838,6 +858,7 @@ void CMD_HELP(){
 	printf("wf [name] [buf]\t\twrite to file by[name] and [buf]\n");
 	printf("del [name]\t\tdelete a file by[name]\n");
 	printf("exit\t\t\texit the cmd\n");
+	printf("fat\t\t\tshow the fat\n");
 	printf("for some instruction you should input  parameter to make them done,for example:\n");
 	printf("cd doc \n");
 	printf("this instruction try to change current direction to 'doc'\n");
@@ -925,6 +946,10 @@ void CMD_DEL(char name[]){
 	}
 }
 
+void CMD_showFat(){
+	showFat();
+}
+
 void CMD_ERR(){
 	printf("NO SUCH INSTRUCTION!!!\t(try \"help\")\n");
 }
@@ -994,6 +1019,8 @@ char ins_judge(char args[]){
 		return DEL;
 	if (!strcmp(args, "exit"))
 		return EXIT;
+	if (!strcmp(args, "fat"))
+		return SHOW_FAT;
 	return ERR;
 }
 
