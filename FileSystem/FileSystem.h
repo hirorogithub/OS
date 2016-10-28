@@ -47,6 +47,7 @@
 #define	DEL						9
 #define	EXIT						10
 #define	SHOW_FAT			11
+#define	RESTART				12
 #define	ERR						-1
 
 
@@ -156,6 +157,8 @@ bool FAT_init();
 bool OPT_init();
 void save_Fat();
 void showFat();
+
+void HFS_restart();
 bool HFS_create_file(char name[], char attribute);
 vfile* HFS_open_file(char name[], char type);
 vfile*  HFS_read_file(char name[], int length);
@@ -213,6 +216,8 @@ void CMD_DEL(char name[]);
 void CMD_HELP();
 void CMD_showFat();
 void CMD_ERR();
+void CMD_ReStart();
+
 
 bool checkValid(char name[]);
 char ins_judge(char args[]);

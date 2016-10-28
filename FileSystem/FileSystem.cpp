@@ -69,6 +69,8 @@ bool hardDisk_init(){
 
 void saveDisk(){
 
+	pointer temp_p = CMD.cur_dir.fileInfo.write;
+	pushBuf((char*)CMD.cur_dir.data, BLOCK_SIZE, temp_p);
 	FILE* fp;
 	if ((fp = fopen("disk.img", "wb")) == NULL){
 		printf("Error:save disk faile!\n");
@@ -111,7 +113,7 @@ bool HFS_install(){
 	out(0, temp);
 
 	/*init root direction*/
-	((inode*)temp)[0].attribute = DIRECTION;
+	((inode*)temp)[0].attribute = DIRECTION|SYS_FILE|READ_ONLY;
 	((inode*)temp)[0].blockId = ROOT_DIR;
 	((inode*)temp)[0].fileLength = 1;
 	memcpy(((inode*)temp)[0].fileName, "Rt:",3);
@@ -164,10 +166,10 @@ bool CMD_init(){
 	in(ROOT_DIR, (char*)(CMD.cur_dir.data));
 	CMD.cur_dir.cnt = CMD.cur_dir.data[0].fileLength;
 
-	CMD.cur_dir.fileInfo.attribute = DIRECTION;
+	CMD.cur_dir.fileInfo.attribute = CMD.cur_dir.data[0].attribute;
 	CMD.cur_dir.fileInfo.flag = WRITE;
-	CMD.cur_dir.fileInfo.length = CMD.cur_dir.cnt;
-	CMD.cur_dir.fileInfo.number = ROOT_DIR;
+	CMD.cur_dir.fileInfo.length = CMD.cur_dir.data[0].fileLength;
+	CMD.cur_dir.fileInfo.number = CMD.cur_dir.data[0].blockId;
 	memcpy(CMD.cur_dir.fileInfo.name, CMD.cur_dir.data[0].fileName, LEN_FILE_NAME);
 	CMD.cur_dir.fileInfo.name[LEN_FILE_NAME ] = '/';
 	CMD.cur_dir.fileInfo.name[LEN_FILE_NAME +1] = '\0';
@@ -313,6 +315,8 @@ vfile*  HFS_write_file(char name[], char buf[], int length){
 
 	vfile * file=checkOpen(name, WRITE);
 	if (!file)
+		return NULL;
+	if (file->fileInfo.attribute&READ_ONLY || file->fileInfo.attribute&SYS_FILE)
 		return NULL;
 	memcpy(file->data + file->fileInfo.length, buf, length + 1);
 	file->fileInfo.length += length;
@@ -655,6 +659,20 @@ bool HFS_change_dir(char name[]){
 	return true;
 }
 
+void HFS_restart(){
+	free(CMD.cur_dir.data);
+	for (int i = 0; i < MAX_OPEN; ++i)
+		free(HFS.OPT.file[i].data);
+	char temp[BLOCK_SIZE];
+	memset(temp, 0,BLOCK_SIZE);
+	for (int i = 0; i < DISK_SIZE; ++i)
+		out(i, temp);
+	remove("disk.img");
+	HFS_install();
+	HFS_init();
+	CMD_init();
+}
+
 vfile* checkOpen(char name[],int opt_type){
 
 
@@ -767,6 +785,9 @@ void console(){
 				break;
 			case SHOW_FAT:
 				CMD_showFat();
+				break;
+			case RESTART:
+				CMD_ReStart();
 				break;
 			case	ERR:
 				CMD_ERR();
@@ -926,10 +947,10 @@ void CMD_WriteFile(char name[], char buf[]){
 		nameEndSpace(name);
 		vfile* file = HFS_write_file(name, buf, strlen(buf));
 		if (!file){
-			printf("Error:file ");
+			printf("Error:writeable file [");
 			for (int i = 0; i < nameLen(name); i++)
 				printf("%c", name[i]); 
-			printf("does not exist\n");
+			printf("] does not exist\n");
 			return;
 		}
 		else{
@@ -952,6 +973,17 @@ void CMD_showFat(){
 
 void CMD_ERR(){
 	printf("NO SUCH INSTRUCTION!!!\t(try \"help\")\n");
+}
+
+void CMD_ReStart(){
+	printf("DO YOU REALLY WANT TO RESTART??!!\nYOU WILL LOST ALL THE DATA!!y/n\n");
+		fflush(stdin);
+	char c;
+	scanf("%c", &c);
+	fflush(stdin);
+	if (c == 'y')
+		HFS_restart();
+	
 }
 
 bool checkValid(char name[]){
@@ -1021,6 +1053,8 @@ char ins_judge(char args[]){
 		return EXIT;
 	if (!strcmp(args, "fat"))
 		return SHOW_FAT;
+	if (!strcmp(args, "re"))
+		return RESTART;
 	return ERR;
 }
 
