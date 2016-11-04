@@ -74,7 +74,7 @@ void saveDisk(){
 	FILE* fp;
 	if ((fp = fopen("disk.img", "wb")) == NULL){
 		printf("Error:save disk faile!\n");
-		fclose(fp);
+		//fclose(fp);
 		return;
 	}
 	fwrite(&hardDisk, sizeof(hardDisk), 1, fp);
@@ -326,6 +326,7 @@ vfile*  HFS_write_file(char name[], char buf[], int length){
 	pushBuf(file->data, file->fileInfo.length, file->fileInfo.write);
 	//increaseFileLength(CMD.cur_dir.fileInfo.number,length);
 	//CMD.cur_dir.fileInfo.length++;
+	saveDisk();
 	return file;
 }
 
@@ -380,7 +381,7 @@ bool HFS_delete_file(char name[]){
 			break;
 	}
 
-	if (fileIndex == HFS.OPT.length)
+	if (fileIndex != HFS.OPT.length)
 		return true;
 
 	/*delect disk*/
@@ -564,18 +565,19 @@ bool HFS_delete_dir(char name[]){
 	if (HFS_DFS(name, CMD.cur_dir.data[dirIndex].blockId, CMD.cur_dir.data[dirIndex].fileLength,false)){
 		HFS.fat.next[CMD.cur_dir.data[dirIndex].blockId] = FREE;
 	    HFS_DFS(name, CMD.cur_dir.data[dirIndex].blockId, CMD.cur_dir.data[dirIndex].fileLength,true);
+
+		/*delect dir info*/
+		for (int i = dirIndex; i < BLOCK_SIZE / sizeof(inode) - 1; ++i)
+			CMD.cur_dir.data[i] = CMD.cur_dir.data[i + 1];
+
+		CMD.cur_dir.cnt--;
+		CMD.cur_dir.fileInfo.length--;
+		CMD.cur_dir.data[0].fileLength--;
+		//decreaseFileLength(CMD.cur_dir.fileInfo.number);
+		saveDisk();
 	}
 	
 
-	/*delect dir info*/
-	for (int i = dirIndex; i < BLOCK_SIZE/sizeof(inode)-1; ++i)
-		CMD.cur_dir.data[i] = CMD.cur_dir.data[i + 1];
-
-	CMD.cur_dir.cnt--;
-	CMD.cur_dir.fileInfo.length--;
-	CMD.cur_dir.data[0].fileLength--;
-	//decreaseFileLength(CMD.cur_dir.fileInfo.number);
-	saveDisk();
 	return true;
 }
 
@@ -615,7 +617,7 @@ bool HFS_DFS(char name[], int blockId,int length,bool flag){
 	}
 
 	/*save fat in disk*/
-	if (flag=true)
+	if (flag==true)
 		save_Fat();
 	return b;
 
@@ -768,7 +770,7 @@ void console(){
 				break;
 			case	Change:
 				inputName(args1);
-				scanf_s("%s", &args2,16);
+				scanf_s("%s", args2,16);
 				CMD_Change(args1, args2); //该函数有问题，修改文件属性时，会把文件变为目录【已修正】
 				break;
 			case	Write_File	:
@@ -779,6 +781,10 @@ void console(){
 			case	DEL:
 				inputName(args1);
 				CMD_DEL(args1);
+				break;
+			case	CLOSE:
+				inputName(args1);
+				CMD_closeFile(args1);
 				break;
 			case	EXIT:
 				exitFlag = true;
@@ -878,6 +884,7 @@ void CMD_HELP(){
 	printf("cg [name]\t\tchange a file to new type by [name][type]\n");
 	printf("wf [name] [buf]\t\twrite to file by[name] and [buf]\n");
 	printf("del [name]\t\tdelete a file by[name]\n");
+	printf("cl [name]\t\tclose a file by[name]\n");
 	printf("exit\t\t\texit the cmd\n");
 	printf("fat\t\t\tshow the fat\n");
 	printf("for some instruction you should input  parameter to make them done,for example:\n");
@@ -967,6 +974,14 @@ void CMD_DEL(char name[]){
 	}
 }
 
+void CMD_closeFile(char name[]){
+
+	if (checkValid(name)){
+		nameEndSpace(name);
+		HFS_close_file(name);
+	}
+}
+
 void CMD_showFat(){
 	showFat();
 }
@@ -1049,6 +1064,8 @@ char ins_judge(char args[]){
 		return Write_File;
 	if (!strcmp(args, "del"))
 		return DEL;
+	if (!strcmp(args, "cl"))
+		return CLOSE;
 	if (!strcmp(args, "exit"))
 		return EXIT;
 	if (!strcmp(args, "fat"))

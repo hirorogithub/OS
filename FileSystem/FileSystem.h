@@ -48,6 +48,7 @@
 #define	EXIT						10
 #define	SHOW_FAT			11
 #define	RESTART				12
+#define	CLOSE					13
 #define	ERR						-1
 
 
@@ -213,6 +214,7 @@ void CMD_Change(char name[], char attribute[]);
 void CMD_ReadFile(char name[], int length);
 void CMD_WriteFile(char name[], char buf[]);
 void CMD_DEL(char name[]);
+void CMD_closeFile(char name[]);
 void CMD_HELP();
 void CMD_showFat();
 void CMD_ERR();
@@ -225,9 +227,10 @@ int checkExist(char* name, int attribute);
 int getFreeBlock();
 int nameLen(char name[]);
 void nameEndSpace(char name[]);
+void saveInput(char* s, int len);
 /* change n to binary string*/
 void toB(char n, char s[]);
-void saveInput(char* s, int len);
+
 //TODO
 
 #endif
