@@ -12,10 +12,11 @@
 
 #define	LEN_FILE_NAME	3
 #define	LEN_FILE_TYPE		2
-#define	LEN_FILE_length	1
+#define	LEN_FILE_LENGTH	1
 
-#define	WRITE					1
-#define	READ					0
+/*flag*/
+#define	WRITE					0
+#define	READ					1
 #define	NO_EXIST				-1
 
 /*type*/
@@ -44,7 +45,10 @@
 #define	Change				7
 #define	Write_File				8
 #define	DEL						9
-#define EXIT					10
+#define	EXIT						10
+#define	SHOW_FAT			11
+#define	RESTART				12
+#define	CLOSE					13
 #define	ERR						-1
 
 
@@ -67,6 +71,7 @@ typedef struct  {
 
 
 /*hardware	API*/
+void saveDisk();
 bool hardDisk_init();
 bool out(int id, char buffer[]);
 bool out(int id, int begin ,int len,char buffer[]);
@@ -151,7 +156,10 @@ bool HFS_install();
 bool HFS_init();
 bool FAT_init();
 bool OPT_init();
-void save_FAT();
+void save_Fat();
+void showFat();
+
+void HFS_restart();
 bool HFS_create_file(char name[], char attribute);
 vfile* HFS_open_file(char name[], char type);
 vfile*  HFS_read_file(char name[], int length);
@@ -172,7 +180,15 @@ void HFS_show_dir();
 bool HFS_delete_dir(char name[]);
 bool HFS_DFS(char name[], int blockId,int length,bool flag);// flag :0 for check ,1for delete
 bool HFS_change_dir(char name[]);
+
+/*默认值给dir用，双参数给file用*/
+//void increaseFileLength(int cur_blockid,int len=1);
+//void decreaseFileLength(int cur_blockid,int len=-1);
+void saveFileLength(int cur_blockid);
 //void clearEmptyFlag(char name[]);
+
+void saveCur_dir();
+int getFatherFileLength();
 
 /*HFS API*/
 void pushBuf(char* val, int len,pointer p);
@@ -194,19 +210,27 @@ void CMD_RD(char name[]);
 void CMD_CD(char name[]);
 void CMD_HELP();
 void CMD_MakeFile(char name[]);
-void CMD_Change(char name[],char attribute);
+void CMD_Change(char name[], char attribute[]);
 void CMD_ReadFile(char name[], int length);
 void CMD_WriteFile(char name[], char buf[]);
 void CMD_DEL(char name[]);
+void CMD_closeFile(char name[]);
 void CMD_HELP();
+void CMD_showFat();
 void CMD_ERR();
+void CMD_ReStart();
+
+
 bool checkValid(char name[]);
 char ins_judge(char args[]);
 int checkExist(char* name, int attribute);
 int getFreeBlock();
 int nameLen(char name[]);
+void nameEndSpace(char name[]);
+void saveInput(char* s, int len);
 /* change n to binary string*/
 void toB(char n, char s[]);
+
 //TODO
 
 #endif

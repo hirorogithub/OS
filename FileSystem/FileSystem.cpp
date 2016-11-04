@@ -4,8 +4,16 @@
 #include <stdio.h>
 #include <ctype.h>
 /* TODO
-void toB(char n, char s[]);
-//TODO
+问题的根源是目录结构信息的分布存放
+需要设计好数据结构来处理目录信息的唯一性
+目前的准确的目录信息是存放于该inode的父节点上的，而该inode保存的
+父节点信息是过期的，
+解决方案：
+目录信息除根节点外，只保存于父节点上，返回时读取父节点上的数据
+再做进一步信息填充
+用CMD做最新信息的缓存，cd的时候才把当前目录信息保存到父级的disk里
+
+
 */
 _hd hardDisk;
 _cmd CMD;
@@ -24,8 +32,6 @@ bool out(int id, int begin, int len,char buffer[]){
 	else
 		return false;
 }
-
-
 
 bool in(int id, int begin, int len,char buffer[]){
 	if (id<DISK_SIZE){
@@ -49,9 +55,48 @@ void initVfile(vfile* file){
 void initVdir(vdir* dir){
 
 }
+
 bool hardDisk_init(){
-	//TODO 
+	
+	FILE* fp;
+	if ((fp = fopen("disk.img", "rb")) == NULL){
+		return true;
+	}
+	fread(&hardDisk, sizeof(hardDisk), 1, fp);
+	fclose(fp);
 	return true;
+}
+
+void saveDisk(){
+
+	pointer temp_p = CMD.cur_dir.fileInfo.write;
+	pushBuf((char*)CMD.cur_dir.data, BLOCK_SIZE, temp_p);
+	FILE* fp;
+	if ((fp = fopen("disk.img", "wb")) == NULL){
+		printf("Error:save disk faile!\n");
+		//fclose(fp);
+		return;
+	}
+	fwrite(&hardDisk, sizeof(hardDisk), 1, fp);
+	fclose(fp);
+	return;
+
+}
+
+void showFat(){
+
+	printf("0:FREE\t1:OCCUPY\n");
+	printf("  ");
+	for (int i = 0; i < 16; ++i)
+		printf("%x ", i);
+	printf("\n");
+	for (int i = 0; i < DISK_SIZE / 16; ++i){
+		printf("%x ", i);
+		for (int j = 0; j < 16; ++j){
+			printf("%d ", HFS.fat.next[i * 16 + j] == FREE ? 0 : 1);
+		}
+		printf("\n");
+	}
 }
 
 bool HFS_install(){
@@ -68,7 +113,7 @@ bool HFS_install(){
 	out(0, temp);
 
 	/*init root direction*/
-	((inode*)temp)[0].attribute = DIRECTION;
+	((inode*)temp)[0].attribute = DIRECTION|SYS_FILE|READ_ONLY;
 	((inode*)temp)[0].blockId = ROOT_DIR;
 	((inode*)temp)[0].fileLength = 1;
 	memcpy(((inode*)temp)[0].fileName, "Rt:",3);
@@ -78,7 +123,7 @@ bool HFS_install(){
 	return true;
 }
 
-void save_FAT(){
+void save_Fat(){
 
 	out(0, HFS.fat.next);
 	out(1, HFS.fat.next + BLOCK_SIZE);
@@ -108,6 +153,10 @@ bool FAT_init(){
 bool OPT_init(){
 	
 	HFS.OPT.length = 0;
+	for (int i = 0; i < MAX_OPEN; ++i){
+		HFS.OPT.file[i].data = (char*)malloc(sizeof(BLOCK_SIZE));
+		//memset(HFS.OPT.file[i].data, 0, BLOCK_SIZE);
+	}
 	return true;
 }
 
@@ -117,16 +166,17 @@ bool CMD_init(){
 	in(ROOT_DIR, (char*)(CMD.cur_dir.data));
 	CMD.cur_dir.cnt = CMD.cur_dir.data[0].fileLength;
 
-	CMD.cur_dir.fileInfo.attribute = DIRECTION;
+	CMD.cur_dir.fileInfo.attribute = CMD.cur_dir.data[0].attribute;
 	CMD.cur_dir.fileInfo.flag = WRITE;
-	CMD.cur_dir.fileInfo.length = CMD.cur_dir.cnt;
-	CMD.cur_dir.fileInfo.number = ROOT_DIR;
+	CMD.cur_dir.fileInfo.length = CMD.cur_dir.data[0].fileLength;
+	CMD.cur_dir.fileInfo.number = CMD.cur_dir.data[0].blockId;
 	memcpy(CMD.cur_dir.fileInfo.name, CMD.cur_dir.data[0].fileName, LEN_FILE_NAME);
 	CMD.cur_dir.fileInfo.name[LEN_FILE_NAME ] = '/';
 	CMD.cur_dir.fileInfo.name[LEN_FILE_NAME +1] = '\0';
 	CMD.cur_dir.fileInfo.write = CMD.cur_dir.fileInfo.read = { ROOT_DIR, 0 };
 	return true;
 }
+
 /*file system API:
 for file
 */
@@ -150,41 +200,51 @@ bool HFS_create_file(char name[], char attribute){
 	HFS.fat.next[blockid] = FILE_END;
 
 	/*init vfile info*/
-	vfile* temp = (vfile*)malloc(sizeof(vfile));
+	/*回头看发觉这是多余的信息填充
+	所以注释掉
+	vfile temp ;
 
-	if (!addName(temp->fileInfo.name, CMD.cur_dir.fileInfo.name, name, FILE_TYPE))
+	if (!addName(temp.fileInfo.name, CMD.cur_dir.fileInfo.name, name, FILE_TYPE))
 		return false;
-	temp->fileInfo.attribute = attribute&NORMAL_FILE;
-	temp->fileInfo.flag = 0;
-	temp->fileInfo.length = BLOCK_SIZE;
-	temp->fileInfo.number = blockid;
-	temp->data = (char*)malloc(BLOCK_SIZE);
+	temp.fileInfo.attribute = attribute&NORMAL_FILE;
+	temp.fileInfo.flag = 0;
+	temp.fileInfo.length = BLOCK_SIZE;
+	temp.fileInfo.number = blockid;
+	*/
+	char data [BLOCK_SIZE];
+	memset(data, 0, BLOCK_SIZE);
+	memcpy(data, name, nameLen(name));
+	memcpy(data + nameLen(name),".fl\n",4);
+	
 
 	/*pointer tempp = *(pointer*)malloc(sizeof(pointer));
 	tempp.bnum = blockid;
 	tempp.dnum = 0;*/
-	temp->fileInfo.read = { blockid, 0 };
-	temp->fileInfo.write = { blockid, 0 };
+
+
+	pointer write = { blockid, 0 };
 
 
 	/*update CMD*/
-	memcpy(CMD.cur_dir.data[CMD.cur_dir.cnt].fileName, name, nameLen(name));
-	CMD.cur_dir.data[CMD.cur_dir.cnt].fileLength = BLOCK_SIZE;
+	/*update current direction */
+	memcpy(CMD.cur_dir.data[CMD.cur_dir.cnt].fileName, name, LEN_FILE_NAME);
+	CMD.cur_dir.data[CMD.cur_dir.cnt].fileLength = nameLen(name)+4;
 	memcpy(CMD.cur_dir.data[CMD.cur_dir.cnt].fileType, FILE_TYPE, 2);
 	CMD.cur_dir.data[CMD.cur_dir.cnt].blockId = blockid;
 	CMD.cur_dir.data[CMD.cur_dir.cnt].attribute = attribute;
-	CMD.cur_dir.data[0].fileLength++;
+	//increaseFileLength(CMD.cur_dir.fileInfo.number);
 	CMD.cur_dir.cnt++;
+	CMD.cur_dir.fileInfo.length++;
+	CMD.cur_dir.data[0].fileLength++;
 	//clearEmptyFlag(CMD.cur_dir.fileInfo.name);
 
-	/*save in disk*/
-	pushBuf((char*)(CMD.cur_dir.data), BLOCK_SIZE, CMD.cur_dir.fileInfo.write);
-	pushBuf(temp->data, BLOCK_SIZE, temp->fileInfo.write);
-	save_FAT();
+	/*no more save CMD.cur_dir.data[] in disk*/
+	//pushBuf((char*)(CMD.cur_dir.data), BLOCK_SIZE, CMD.cur_dir.fileInfo.write);
+	pushBuf(data, BLOCK_SIZE, write);
+	save_Fat();
 
 	//free(&tempp);
-	free(temp->data);
-	free(temp);
+	saveDisk();
 	return true;
 
 }
@@ -192,8 +252,8 @@ bool HFS_create_file(char name[], char attribute){
 vfile* HFS_open_file(char name[], char opt_type){
 
 	/* if READ_ONLY or not*/
-	if (opt_type&READ_ONLY)
-		return NULL;
+	//if (opt_type&READ)
+	//	return NULL;
 
 	/*if this name exsit ?*/
 	int dirIndex = checkExist(name, NORMAL_FILE);
@@ -208,13 +268,13 @@ vfile* HFS_open_file(char name[], char opt_type){
 	/*if have opened?*/
 	for (int i = 0; i < MAX_OPEN; i++){
 		char* temp = getFileName(HFS.OPT.file[i].fileInfo.name);
-		if (!memcmp(temp, name,nameLen(temp)))
+		if (!memcmp(temp, name,nameLen(name)))
 			return NULL;
 	}
 
 	/*create a vfile and fill openfile table*/
 	vfile* temp = &(HFS.OPT.file[HFS.OPT.length]);
-	if(addName(temp->fileInfo.name, CMD.cur_dir.fileInfo.name, name, FILE_TYPE)){
+	if(!addName(temp->fileInfo.name, CMD.cur_dir.fileInfo.name, name, FILE_TYPE)){
 		return false;
 	}
 	//temp->data = (char*)malloc(temp->fileInfo.length);
@@ -229,7 +289,8 @@ vfile* HFS_open_file(char name[], char opt_type){
 	*/
 	temp->fileInfo.read = { CMD.cur_dir.data[dirIndex].blockId,0 };
 	temp->fileInfo.write = { CMD.cur_dir.data[dirIndex].blockId, 0 };
-															
+										
+	popBuf(temp->data, BLOCK_SIZE, temp->fileInfo.read);
 	
 	HFS.OPT.length++;
 
@@ -237,6 +298,7 @@ vfile* HFS_open_file(char name[], char opt_type){
 
 
 }
+
 vfile* HFS_read_file(char name[], int length){
 
 	vfile * file = checkOpen(name,READ);
@@ -254,17 +316,27 @@ vfile*  HFS_write_file(char name[], char buf[], int length){
 	vfile * file=checkOpen(name, WRITE);
 	if (!file)
 		return NULL;
-	memcpy(file->data, buf, length);
+	if (file->fileInfo.attribute&READ_ONLY || file->fileInfo.attribute&SYS_FILE)
+		return NULL;
+	memcpy(file->data + file->fileInfo.length, buf, length + 1);
 	file->fileInfo.length += length;
+	int dirIndex = checkExist(name, NORMAL_FILE);
+	CMD.cur_dir.data[dirIndex].fileLength += length;
+
+	pushBuf(file->data, file->fileInfo.length, file->fileInfo.write);
+	//increaseFileLength(CMD.cur_dir.fileInfo.number,length);
+	//CMD.cur_dir.fileInfo.length++;
+	saveDisk();
 	return file;
 }
+
 bool HFS_close_file(char name[]){
 
 	/*check if opened*/
 	int fileIndex = 0;
 	char* temp = getFileName(HFS.OPT.file[fileIndex].fileInfo.name);
 	for (; fileIndex < HFS.OPT.length; fileIndex++){
-		 if (!memcmp(temp, name,nameLen(temp)))
+		 if (!memcmp(temp, name,nameLen(name)))
 			break;
 	}
 
@@ -274,15 +346,16 @@ bool HFS_close_file(char name[]){
 	else
 		file =&( HFS.OPT.file[fileIndex]);
 
+	/*由于目前没有做可增长文件，所以以下代码暂时作废
 	if (file->fileInfo.flag == WRITE){
 		file->data = (char*)realloc(file->data, file->fileInfo.length + 1);
 		file->data[file->fileInfo.length] = '#';
 		file->fileInfo.length++;
 	}
-
+	*/
 	
 	/*save to disk when close*/
-	pushBuf(file->data, file->fileInfo.length,file->fileInfo.write);
+	//pushBuf(file->data, file->fileInfo.length,file->fileInfo.write);
 
 	/*delete info in OPT*/
 	for (int i = fileIndex; i < HFS.OPT.length; i++)
@@ -290,6 +363,7 @@ bool HFS_close_file(char name[]){
 	HFS.OPT.length--;
 	return true;
 }
+
 bool HFS_delete_file(char name[]){
 
 	/*if this name is exist*/
@@ -300,16 +374,15 @@ bool HFS_delete_file(char name[]){
 
 	/*if haved open?*/
 	int fileIndex = 0;
-	char* temp = getFileName(HFS.OPT.file[fileIndex].fileInfo.name);
+	char* temp;
 	for (; fileIndex < HFS.OPT.length; fileIndex++){
-		if (!memcmp(temp, name,nameLen(temp)))
+	    temp = getFileName(HFS.OPT.file[fileIndex].fileInfo.name);
+		if (!memcmp(temp, name,nameLen(name)))
 			break;
 	}
 
-
-	if (fileIndex == HFS.OPT.length)
+	if (fileIndex != HFS.OPT.length)
 		return true;
-
 
 	/*delect disk*/
 	int father = CMD.cur_dir.data[dirIndex].blockId;
@@ -322,19 +395,20 @@ bool HFS_delete_file(char name[]){
 	HFS.fat.next[father] = FREE;
 
 	/*delect dir info*/
-	for (int i = dirIndex; i < CMD.cur_dir.cnt; i++){
+	for (int i = dirIndex; i < BLOCK_SIZE/sizeof(inode)-1; i++)
 		CMD.cur_dir.data[i] = CMD.cur_dir.data[i + 1];
-	}
-	CMD.cur_dir.cnt--;
-	CMD.cur_dir.fileInfo.length --;
-
 	
+	CMD.cur_dir.cnt--;
+	CMD.cur_dir.fileInfo.length--;
+	CMD.cur_dir.data[0].fileLength--;
+	//decreaseFileLength(CMD.cur_dir.fileInfo.number);
 
 	/*save Fat in Disk*/
-	save_FAT();
+	saveDisk();
 	return true;
 	
 }
+
 bool HFS_typefile(char name[]){
 	/*if this name is exist*/
 	int dirIndex=checkExist(name,NORMAL_FILE);
@@ -346,7 +420,7 @@ bool HFS_typefile(char name[]){
 	int fileIndex = 0;
 	char* tempName = getFileName(HFS.OPT.file[fileIndex].fileInfo.name);
 	for (; fileIndex < HFS.OPT.length; fileIndex++){
-		if (!memcmp(tempName, name,nameLen(tempName)))
+		if (!memcmp(tempName, name,nameLen(name)))
 			break;
 	}
 	if (fileIndex != HFS.OPT.length)
@@ -366,6 +440,7 @@ bool HFS_typefile(char name[]){
 	
 	return true;
 }
+
 bool HFS_change(char name[], char attribute){
 
 	/*if this name is exist*/
@@ -378,14 +453,14 @@ bool HFS_change(char name[], char attribute){
 	int fileIndex = 0;
 	char* temp = getFileName(HFS.OPT.file[fileIndex].fileInfo.name);
 	for (; fileIndex < HFS.OPT.length; fileIndex++){
-		if (!memcmp(temp, name,nameLen(temp)))
+		if (!memcmp(temp, name,nameLen(name)))
 			break;
 	}
 	if (fileIndex != HFS.OPT.length)
 		return false;
 
-	CMD.cur_dir.data[dirIndex].attribute = attribute;
-
+	CMD.cur_dir.data[dirIndex].attribute |= attribute;
+	saveDisk();
 	return true;
 }
 
@@ -410,35 +485,33 @@ bool HFS_create_dir(char name[]){
 		return false;
 	HFS.fat.next[blockid] = FILE_END;
 
-	/*update current direction and save in disk*/
-	CMD.cur_dir.fileInfo.length ++;
-	memcpy(CMD.cur_dir.data[CMD.cur_dir.cnt].fileName ,name,3);
-	for (int i = strlen(name); i < 3; i++){
-		CMD.cur_dir.data[CMD.cur_dir.cnt].fileName[i] = ' ';
-	}//fill with space;
+	/*update current direction */
+	memcpy(CMD.cur_dir.data[CMD.cur_dir.cnt].fileName ,name,LEN_FILE_NAME);
 	memcpy(CMD.cur_dir.data[CMD.cur_dir.cnt].fileType , DIR_TYPE,2);
 	CMD.cur_dir.data[CMD.cur_dir.cnt].fileLength = 1;
 	CMD.cur_dir.data[CMD.cur_dir.cnt].blockId = blockid;
 	CMD.cur_dir.data[CMD.cur_dir.cnt].attribute = DIRECTION;
 
 	CMD.cur_dir.cnt++;
+	CMD.cur_dir.fileInfo.length++;
 	CMD.cur_dir.data[0].fileLength++;
-
-	pushBuf((char*)(CMD.cur_dir.data), BLOCK_SIZE, CMD.cur_dir.fileInfo.write);
+	//increaseFileLength(CMD.cur_dir.fileInfo.number);
+	//pushBuf((char*)(CMD.cur_dir.data), BLOCK_SIZE, CMD.cur_dir.fileInfo.write);
 
 	/*save new dir in disk*/
-	inode *temp=(inode*)malloc(BLOCK_SIZE );
+	inode temp[BLOCK_SIZE/sizeof(inode)];
 	temp[0] = { "", "", DIRECTION,
-		CMD.cur_dir.data[0].blockId,
-		(char)CMD.cur_dir.cnt};
+		CMD.cur_dir.fileInfo.number,//这里填写错了父目录的块号，已修正
+		1};
 	memcpy(temp[0].fileName,".. ",3);
 	memcpy(temp[0].fileType, DIR_TYPE, 2);
 
 	pointer p = { blockid, 0 };
 	pushBuf((char*)temp, BLOCK_SIZE, p);
-	free(temp);
+
+
 	/*save fat in disk*/
-	save_FAT();
+	saveDisk();
 	return true;
 }
 
@@ -454,21 +527,29 @@ void HFS_show_dir(){
 		/*example:
 		FILE    LENGTH  NAM.TY  00000101*/
 		toB(CMD.cur_dir.data[i].attribute, string);
-		if (CMD.cur_dir.data[i].attribute == NORMAL_FILE){
+		if (CMD.cur_dir.data[i].attribute & NORMAL_FILE){
 			printf("FILE");
+			printf("\t%d\t%c%c%c.%c%c\t%s\n",
+			    CMD.cur_dir.data[i].fileLength ,
+				CMD.cur_dir.data[i].fileName[0],
+				CMD.cur_dir.data[i].fileName[1],
+				CMD.cur_dir.data[i].fileName[2],
+				CMD.cur_dir.data[i].fileType[0],
+				CMD.cur_dir.data[i].fileType[1],
+				string);
 		}
 		else {
 			printf("DIR");	
+			printf("\t%c\t%c%c%c %c%c\t%s\n",
+				i>0 || ((CMD.cur_dir.data[0].blockId == ROOT_DIR) &&
+				(CMD.cur_dir.fileInfo.number == ROOT_DIR)) ? CMD.cur_dir.data[i].fileLength + '0' : ' ',
+				CMD.cur_dir.data[i].fileName[0],
+				CMD.cur_dir.data[i].fileName[1],
+				CMD.cur_dir.data[i].fileName[2],
+				CMD.cur_dir.data[i].fileType[0],
+				CMD.cur_dir.data[i].fileType[1],
+				string);
 		}
-
-		printf("\t%d\t%c%c%c %c%c\t%s\n",
-			CMD.cur_dir.data[i].fileLength,
-			CMD.cur_dir.data[i].fileName[0],
-			CMD.cur_dir.data[i].fileName[1],
-			CMD.cur_dir.data[i].fileName[2],
-			CMD.cur_dir.data[i].fileType[0],
-			CMD.cur_dir.data[i].fileType[1],
-			string);		
 
 	}
 	printf("\n");
@@ -481,83 +562,128 @@ bool HFS_delete_dir(char name[]){
 	if (dirIndex == NO_EXIST)
 		return false;
 
-	if (HFS_DFS(name, CMD.cur_dir.data[dirIndex].blockId, CMD.cur_dir.data[dirIndex].fileLength,0)){
-		return HFS_DFS(name, CMD.cur_dir.data[dirIndex].blockId, CMD.cur_dir.data[dirIndex].fileLength,1);
+	if (HFS_DFS(name, CMD.cur_dir.data[dirIndex].blockId, CMD.cur_dir.data[dirIndex].fileLength,false)){
+		HFS.fat.next[CMD.cur_dir.data[dirIndex].blockId] = FREE;
+	    HFS_DFS(name, CMD.cur_dir.data[dirIndex].blockId, CMD.cur_dir.data[dirIndex].fileLength,true);
+
+		/*delect dir info*/
+		for (int i = dirIndex; i < BLOCK_SIZE / sizeof(inode) - 1; ++i)
+			CMD.cur_dir.data[i] = CMD.cur_dir.data[i + 1];
+
+		CMD.cur_dir.cnt--;
+		CMD.cur_dir.fileInfo.length--;
+		CMD.cur_dir.data[0].fileLength--;
+		//decreaseFileLength(CMD.cur_dir.fileInfo.number);
+		saveDisk();
 	}
+	
+
 	return true;
 }
 
-bool HFS_DFS(char name[], int blockId,int length,bool flag){
+/*
+对于HFS_delect_dir()传入的flag：
+true:删除遍历到的文件
+false：不删除
+该DFS只遍历该根节点的所有子节点，不包括自己
+所以需要上层额外删除自身
+*/
 
+bool HFS_DFS(char name[], int blockId,int length,bool flag){
 
 	bool b = true;
 	inode temp [BLOCK_SIZE/sizeof(inode)];
 	pointer p = { blockId, 0 };
-	popBuf((char*)(temp), length, p);
+	popBuf((char*)(temp), BLOCK_SIZE, p);
 
 	for (int i = 0; i < length; i++){
-		if (temp[i].attribute == NORMAL_FILE){
+		if (temp[i].attribute & NORMAL_FILE){
 			/*have open?*/
 			int fileIndex = 0;
 			char* tempName = getFileName(HFS.OPT.file[fileIndex].fileInfo.name);
 			for (; fileIndex < HFS.OPT.length; fileIndex++){
-				if (!memcmp(tempName,temp[i].fileName,nameLen(tempName)))
+				if (!memcmp(tempName, temp[i].fileName, nameLen(temp[i].fileName)))
 					return false;
 			}
-			if (flag == 1)
+			if (flag == true)
 				HFS.fat.next[temp[i].blockId] = FREE;
 		}
-		else if (temp[i].attribute == DIRECTION&&
-						strcmp(temp[i].fileName, ".. /")){
+		else if ((temp[i].attribute & DIRECTION)&&
+						memcmp(temp[i].fileName, ".. ",LEN_FILE_NAME)){
 			b &= HFS_DFS(temp[i].fileName, temp[i].blockId, temp[i].fileLength,flag);
-			if (flag == 1)
+			if (flag == true)
 				HFS.fat.next[temp[i].blockId]=FREE;
 		}
 	}
 
 	/*save fat in disk*/
-	save_FAT();
+	if (flag==true)
+		save_Fat();
 	return b;
 
 }
 
 bool HFS_change_dir(char name[]){ 
-	if (!strcmp(name, ".")) return true;
+	/*1.save cur.dir.fileInfo to disk*/
+	/*2.load dir message from disk*/
+	/*2.5 from grandfather get father message*/
+	/*3.switch*/
+	
+	if (!memcmp(name, ".  ",LEN_FILE_NAME)) return true;
 	/*if dir exist*/
 	int dirIndex = checkExist(name, DIRECTION);
 	if (dirIndex == NO_EXIST)
 		return false;
 
-	/*change current dir */
-	CMD.cur_dir.cnt=CMD.cur_dir.fileInfo.length = CMD.cur_dir.data[dirIndex].fileLength;
-	CMD.cur_dir.fileInfo.number = CMD.cur_dir.data[dirIndex].blockId;
-	CMD.cur_dir.fileInfo.write=CMD.cur_dir.fileInfo.read = { CMD.cur_dir.fileInfo.number, 0 };
+	saveCur_dir();
 
-	if (!strcmp(name, "..")){
+	/*change current dir */
+	//CMD.cur_dir.cnt=CMD.cur_dir.fileInfo.length = CMD.cur_dir.data[dirIndex].fileLength;
+
+
+	if (!memcmp(name, ".. ", LEN_FILE_NAME)){
 		/*move back to father*/
+		int fileLength = getFatherFileLength();
+		CMD.cur_dir.cnt = CMD.cur_dir.fileInfo.length = fileLength;
 		int len=strlen(CMD.cur_dir.fileInfo.name);
-		CMD.cur_dir.fileInfo.name[len - nameLen(CMD.cur_dir.data[0].fileName)] = '\0';	
+		CMD.cur_dir.fileInfo.name[len - nameLen(CMD.cur_dir.data[0].fileName)-1] = '\0';	//长度应该为nameLen+1，已修改
 	}
 	else{
+		CMD.cur_dir.cnt = CMD.cur_dir.fileInfo.length = CMD.cur_dir.data[dirIndex].fileLength;
 		if (!addName(CMD.cur_dir.fileInfo.name, CMD.cur_dir.fileInfo.name, name, DIR_TYPE)){
 			return false;
 		}
 	}
-
+	CMD.cur_dir.fileInfo.number = CMD.cur_dir.data[dirIndex].blockId;
+	CMD.cur_dir.fileInfo.write = CMD.cur_dir.fileInfo.read = { CMD.cur_dir.fileInfo.number, 0 };
 	popBuf((char*)CMD.cur_dir.data, BLOCK_SIZE,CMD.cur_dir.fileInfo.read);
-
+	saveDisk();
 	return true;
 }
 
-
+void HFS_restart(){
+	free(CMD.cur_dir.data);
+	for (int i = 0; i < MAX_OPEN; ++i)
+		free(HFS.OPT.file[i].data);
+	char temp[BLOCK_SIZE];
+	memset(temp, 0,BLOCK_SIZE);
+	for (int i = 0; i < DISK_SIZE; ++i)
+		out(i, temp);
+	remove("disk.img");
+	HFS_install();
+	HFS_init();
+	CMD_init();
+}
 
 vfile* checkOpen(char name[],int opt_type){
+
+
 	/*haved opened?*/
 	int fileIndex = 0;
-	char* temp = getFileName(HFS.OPT.file[fileIndex].fileInfo.name);
+	char* temp ;
 	for (; fileIndex < HFS.OPT.length; fileIndex++){
-		
-		if (!memcmp(temp, name, nameLen(temp)))
+		temp = getFileName(HFS.OPT.file[fileIndex].fileInfo.name);
+		if (!memcmp(temp, name, nameLen(name)))
 			break;
 	}
 
@@ -595,16 +721,19 @@ int checkExist(char* name,int attribute){
 }
 
 void console(){
+	/*添加安全读入机制，限定读入长度*/
+#define inputName(x)		scanf_s("%3s",args1,4);fflush(stdin)
 	//该定义导致后续连锁错误出现
 	char args0[10] = "\0";
 	char args1[10]="\0";
-	char args2[BLOCK_SIZE] = "\0";
+	char args2[BLOCK_SIZE+1] = "\0";
 	char args3=0;
 	bool exitFlag = false;
 	printf("Welcome to Hiro_File_System:\n");
 	while (true){
-		printf("%s>", CMD.cur_dir.fileInfo.name); //进入子目录再回退到父目录时，这里的名字有问题，待修复
-		scanf("%s", args0); //存在两个bug，待修复 
+		printf("%s>", CMD.cur_dir.fileInfo.name); //进入子目录再回退到父目录时，这里的名字有问题，待修复【已修正】
+		/*2016年10月18日 22:27:39：↑已修复*/
+		scanf_s("%4s", args0,5); //存在两个bug，待修复 
 		/*
 			bug1：输入的字符不连续，则充当多次输入对待
 			bug2：若当前启动，曾有过输入的字符超过限定长度，则最后使用“exit”退出时系统报告出现bug.
@@ -613,45 +742,58 @@ void console(){
 		switch (ins_judge(args0))
 		{
 			case	MD:
-				scanf("%s", args1); //命名不可使用空格
+				inputName(args1); //命名不可使用空格【已修正】
 				CMD_MD(args1);
 				break;
 			case DIR:
 				CMD_DIR();
 				break;
 			case RD:
-				scanf("%s", args1);
+				inputName(args1);
 				CMD_RD(args1);
 				break;
 			case CD:
-				scanf("%s", args1);
+				inputName(args1);
 				CMD_CD(args1);
 				break;
 			case HELP:
 				CMD_HELP();
 				break; 
 			case Make_File:
-				scanf("%s", args1);
+				inputName(args1);
 				CMD_MakeFile(args1);
 				break;
 			case	Read_File:
-				scanf("%s %d", args1,&args3);
-				CMD_ReadFile(args1, args3); //该函数有问题，存在的文件，提示不存在。
+				inputName(args1);
+				//scanf("%d",&args3);
+				CMD_ReadFile(args1, BLOCK_SIZE); //该函数有问题，存在的文件，提示不存在。【已修正】
 				break;
 			case	Change:
-				scanf("%s %d", args1,&args3);
-				CMD_Change(args1, args3); //该函数有问题，修改文件属性时，会把文件变为目录
+				inputName(args1);
+				scanf_s("%s", args2,16);
+				CMD_Change(args1, args2); //该函数有问题，修改文件属性时，会把文件变为目录【已修正】
 				break;
 			case	Write_File	:
-				scanf("%s %s", args1, args2);
+				inputName(args1);
+				scanf("%64s",args2,65);
 				CMD_WriteFile(args1, args2);
 				break;
 			case	DEL:
-				scanf("%s", args1);
+				inputName(args1);
 				CMD_DEL(args1);
+				break;
+			case	CLOSE:
+				inputName(args1);
+				CMD_closeFile(args1);
 				break;
 			case	EXIT:
 				exitFlag = true;
+				break;
+			case SHOW_FAT:
+				CMD_showFat();
+				break;
+			case RESTART:
+				CMD_ReStart();
 				break;
 			case	ERR:
 				CMD_ERR();
@@ -672,6 +814,7 @@ void console(){
 void CMD_MD(char name[]){
 
 	if (checkValid(name)){
+		nameEndSpace(name);
 		HFS_create_dir(name);
 	}
 }
@@ -696,6 +839,7 @@ void CMD_DIR(){
 void CMD_RD(char name[]){ //存在bug，待修改
 
 	if (checkValid(name)){
+		nameEndSpace(name);
 		HFS_delete_dir(name);
 	}
 
@@ -707,6 +851,7 @@ void CMD_RD(char name[]){ //存在bug，待修改
 void CMD_CD(char name[]){
 
 	if (!strcmp(name, "..") || !strcmp(name, ".") || checkValid(name)){
+		nameEndSpace(name);
 		HFS_change_dir(name);
 	}
 }
@@ -723,7 +868,8 @@ void CMD_HELP(){
 #define	Change				7
 #define	Write_File				8
 #define	DEL						9
-#define EXIT					10
+#define	EXIT						10
+#define	SHOW_FAT			11
 #define	ERR						-1
 */
 	printf("Welcome to use Hiro_File_System\n");
@@ -738,7 +884,9 @@ void CMD_HELP(){
 	printf("cg [name]\t\tchange a file to new type by [name][type]\n");
 	printf("wf [name] [buf]\t\twrite to file by[name] and [buf]\n");
 	printf("del [name]\t\tdelete a file by[name]\n");
+	printf("cl [name]\t\tclose a file by[name]\n");
 	printf("exit\t\t\texit the cmd\n");
+	printf("fat\t\t\tshow the fat\n");
 	printf("for some instruction you should input  parameter to make them done,for example:\n");
 	printf("cd doc \n");
 	printf("this instruction try to change current direction to 'doc'\n");
@@ -752,6 +900,7 @@ void CMD_HELP(){
 void CMD_MakeFile(char name[]){
 
 	if (checkValid(name)){
+		nameEndSpace(name);
 		HFS_create_file(name,NORMAL_FILE);
 	}
 }
@@ -759,11 +908,17 @@ void CMD_MakeFile(char name[]){
 /*
 改变文件属性，首先查找该文件，如果不存在，结束；如果存在，检查文件是否打开，
 打开不能改变属性；没有打开，根据要求改变目录项中属性值。
+添加条件控制，只允许添加只读和系统文件属性。
 */
-void CMD_Change(char name[], char attribute){
-
-	if (checkValid(name)){
-		HFS_change(name, attribute);
+void CMD_Change(char name[], char attribute[]){
+	if (strcmp(attribute,"read_only") &&strcmp(attribute,"systerm_file")){
+		printf("Please input read_only or systerm_file\n");
+		return;
+	}
+	if (checkValid(name)){	
+		nameEndSpace(name);
+		char temp_attribute = strcmp(attribute, "read_only") ? SYS_FILE : READ_ONLY;
+		HFS_change(name, temp_attribute);
 	}
 }
 
@@ -775,15 +930,20 @@ void CMD_Change(char name[], char attribute){
 */
 void CMD_ReadFile(char name[],int length){
 	if (checkValid(name)){
-		if (length > BLOCK_SIZE){
-			printf("parameter:length is too large,please input less then%d", BLOCK_SIZE);
+		nameEndSpace(name);
+		if (length > BLOCK_SIZE||(length<0)){
+			printf("parameter:length is too large or less than 0,please input less then%d", BLOCK_SIZE);
 			return;
 		}
 		vfile *file;
-		if (!(file=HFS_read_file(name, length)))
-			printf("Error: file :%s does not exist\n",name);
+		if (!(file = HFS_read_file(name, length))){
+			printf("Error: file :");
+			for (int i = 0; i < nameLen(name); ++i)
+				printf("%c", name[i]);
+			printf(" does not exist\n");
+		}
 		else{
-			printf("%s", file->data);
+			printf("%s\n", file->data);
 		}
 	}
 }
@@ -791,13 +951,17 @@ void CMD_ReadFile(char name[],int length){
 void CMD_WriteFile(char name[], char buf[]){
 
 	if (checkValid(name)){
+		nameEndSpace(name);
 		vfile* file = HFS_write_file(name, buf, strlen(buf));
 		if (!file){
-			printf("Error:file %s does not exist", name);
+			printf("Error:writeable file [");
+			for (int i = 0; i < nameLen(name); i++)
+				printf("%c", name[i]); 
+			printf("] does not exist\n");
 			return;
 		}
 		else{
-			printf("%s", file->data);
+			printf("%s\n", file->data);
 		}
 	}
 }
@@ -805,12 +969,36 @@ void CMD_WriteFile(char name[], char buf[]){
 void CMD_DEL(char name[]){
 
 	if (checkValid(name)){
+		nameEndSpace(name);
 		HFS_delete_file(name);
 	}
 }
 
+void CMD_closeFile(char name[]){
+
+	if (checkValid(name)){
+		nameEndSpace(name);
+		HFS_close_file(name);
+	}
+}
+
+void CMD_showFat(){
+	showFat();
+}
+
 void CMD_ERR(){
 	printf("NO SUCH INSTRUCTION!!!\t(try \"help\")\n");
+}
+
+void CMD_ReStart(){
+	printf("DO YOU REALLY WANT TO RESTART??!!\nYOU WILL LOST ALL THE DATA!!y/n\n");
+		fflush(stdin);
+	char c;
+	scanf("%c", &c);
+	fflush(stdin);
+	if (c == 'y')
+		HFS_restart();
+	
 }
 
 bool checkValid(char name[]){
@@ -819,10 +1007,10 @@ bool checkValid(char name[]){
 		printf("Please input no more than 3 char\n");
 		return false;
 	}
-	//使用字母、数字和除“$”、“.”、“/”以外的字符
+	//使用字母、数字和除“$”、“.”、“/”以及空格以外的字符
 	for (int i = 0; i < nameLen; i++){
-		if( (name[i] == '$' || name[i] == '.' || name[i] == '/') || (!isascii(name[i])) ){
-			printf("Please input letter,number,or characters except '$', '.' Or '/'\n");
+		if ((name[i] == '$' || name[i] == '.' || name[i] == '/' || name[i] == ' ') || (!isascii(name[i]))){
+			printf("Please input letter,number,or characters except '$', '.' ,' 'Or '/'\n");
 			return false;
 		}
 	}
@@ -835,8 +1023,8 @@ bool addName(char dst[], char dir[], char name[], char type[]){
 	if (end + 6 >= 20)
 		return false;
 	strcpy(dst, dir);
-	memcpy(dst + end, name,strlen(name));
-	end += strlen(name);
+	memcpy(dst + end, name,nameLen(name));
+	end += nameLen(name);
 	if (!memcmp(type, FILE_TYPE, 2)){
 		/*for file*/
 		dst[end] = '.';
@@ -876,8 +1064,14 @@ char ins_judge(char args[]){
 		return Write_File;
 	if (!strcmp(args, "del"))
 		return DEL;
+	if (!strcmp(args, "cl"))
+		return CLOSE;
 	if (!strcmp(args, "exit"))
 		return EXIT;
+	if (!strcmp(args, "fat"))
+		return SHOW_FAT;
+	if (!strcmp(args, "re"))
+		return RESTART;
 	return ERR;
 }
 
@@ -893,8 +1087,10 @@ void toB(char n, char s[]){
 }
 
 char *getFileName(char name[]){
-	int len = strlen(name);
-	return name + len - 6;
+	int i = strlen(name) - 1;
+	while (name[i] != '/')
+		--i;
+	return name+i+1;
 }
 
 void pushBuf(char* val, int len, pointer p){
@@ -902,11 +1098,13 @@ void pushBuf(char* val, int len, pointer p){
 	out(p.bnum, p.dnum, len,val);
 	return;
 }
+
 void popBuf(char* val, int len, pointer p){
 
 	in(p.bnum,p.dnum,len,val);
 	return;
 }
+
 int nameLen(char name[]){
 	int i = 0;
 	for (; i < LEN_FILE_NAME; i++){
@@ -916,3 +1114,68 @@ int nameLen(char name[]){
 	return  LEN_FILE_NAME;
 }
 
+//void increaseFileLength(int cur_blockid,int len){
+//	if (len == 1)
+//		++CMD.cur_dir.fileInfo.length;
+//	_changeFileLength(cur_blockid, len);
+//}
+//
+//void decreaseFileLength(int cur_blockid,int len){
+//	if (len ==- 1)
+//		--CMD.cur_dir.fileInfo.length;
+//	_changeFileLength(cur_blockid, len);
+//}
+
+void saveFileLength(int cur_blockid){
+
+	/*if is not root ,save the info in father dir*/
+	if (cur_blockid != ROOT_DIR){
+		int fatherId = CMD.cur_dir.data[0].blockId;
+		inode temp[BLOCK_SIZE/sizeof(inode)] ;
+		pointer p = { fatherId, 0 };
+		popBuf((char*)(&temp), BLOCK_SIZE, p);
+		for (int i = 1; i < temp[0].fileLength; i++){
+			if (temp[i].blockId == cur_blockid){
+				temp[i].fileLength=CMD.cur_dir.fileInfo.length;
+				break;
+			}
+		}
+		pushBuf((char*)temp, BLOCK_SIZE, p);
+
+	}
+}
+
+void saveCur_dir(){
+
+	saveFileLength(CMD.cur_dir.fileInfo.number);
+	pushBuf((char*)CMD.cur_dir.data, BLOCK_SIZE, CMD.cur_dir.fileInfo.write);
+
+}
+
+int getFatherFileLength(){
+
+	inode father[BLOCK_SIZE / sizeof(inode)];
+	pointer pf = { CMD.cur_dir.data[0].blockId, 0 };
+	popBuf((char*)father, BLOCK_SIZE, pf);
+
+
+	inode grandFather[BLOCK_SIZE / sizeof(inode)];
+	pointer pg = { father[0].blockId, 0 };
+	popBuf((char*)grandFather, BLOCK_SIZE, pg);
+
+	for (int i = 0; i < (BLOCK_SIZE / sizeof(inode)); i++){
+		if (CMD.cur_dir.data[0].blockId== grandFather[i].blockId){
+			return grandFather[i].fileLength;
+		}
+	}
+
+	/*should never go here*/
+	return 0;
+
+}
+
+void nameEndSpace(char name[]){
+	for (int i = strlen(name); i < LEN_FILE_NAME; ++i){
+		name[i] = ' ';
+	}
+}
